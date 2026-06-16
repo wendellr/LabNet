@@ -131,6 +131,9 @@ function getDashboardSnapshot() {
 
 // ─── ContainerLab Provisioner ──────────────────────────────────────────────
 const LABS = require('./labs-data.js');
+const FRR_UID = parseInt(process.env.FRR_UID || '100', 10);
+const FRR_GID = parseInt(process.env.FRR_GID || '101', 10);
+const FRRVTY_GID = parseInt(process.env.FRRVTY_GID || '102', 10);
 
 async function provisionLab(session) {
   const lab = LABS[session.labId];
@@ -152,11 +155,13 @@ async function provisionLab(session) {
 
   // Cria configs FRR para cada roteador
   for (const [router, config] of Object.entries(lab.frr_configs)) {
-    await fs.mkdir(path.join(labDir, router), { recursive: true });
-    await fs.writeFile(path.join(labDir, router, 'frr.conf'), config);
-    await fs.writeFile(path.join(labDir, router, 'daemons'), FRR_DAEMONS);
-    await fs.writeFile(path.join(labDir, router, 'vtysh.conf'),
+    const routerDir = path.join(labDir, router);
+    await fs.mkdir(routerDir, { recursive: true });
+    await fs.writeFile(path.join(routerDir, 'frr.conf'), config);
+    await fs.writeFile(path.join(routerDir, 'daemons'), FRR_DAEMONS);
+    await fs.writeFile(path.join(routerDir, 'vtysh.conf'),
       `service integrated-vtysh-config\nhostname ${router}\n! Desabilita timeout idle de sessao vtysh\nline vty\n exec-timeout 0 0\n!\n`);
+    await applyFrrFilePermissions(routerDir);
   }
 
   // Deploy ContainerLab
@@ -191,6 +196,19 @@ async function provisionLab(session) {
   startGraphServer(session);
 
   return { success: true, containers: session.containers };
+}
+
+async function applyFrrFilePermissions(routerDir) {
+  const frrConf = path.join(routerDir, 'frr.conf');
+  const daemons = path.join(routerDir, 'daemons');
+  const vtyshConf = path.join(routerDir, 'vtysh.conf');
+
+  await fs.chown(frrConf, FRR_UID, FRR_GID);
+  await fs.chmod(frrConf, 0o640);
+  await fs.chown(daemons, FRR_UID, FRR_GID);
+  await fs.chmod(daemons, 0o640);
+  await fs.chown(vtyshConf, FRR_UID, FRRVTY_GID);
+  await fs.chmod(vtyshConf, 0o660);
 }
 
 // ─── Espera ativa por FRR pronto ─────────────────────────────────────────────
@@ -380,9 +398,9 @@ fabricd=no
 vrrpd=no
 pathd=no
 vtysh_enable=yes
-zebra_options=" -s 90000000 --daemon -A 127.0.0.1"
-bgpd_options="   --daemon -A 127.0.0.1"
-staticd_options="--daemon -A 127.0.0.1"
+zebra_options=" -s 90000000 -A 127.0.0.1"
+bgpd_options="   -A 127.0.0.1"
+staticd_options="-A 127.0.0.1"
 `;
 
 async function destroyLab(session) {
