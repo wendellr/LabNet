@@ -172,7 +172,11 @@ async function provisionLab(session) {
   );
 
   if (deployResult.error) {
-    throw new Error(`ContainerLab deploy falhou: ${(deployResult.stderr || deployResult.stdout || deployResult.error.message).trim()}`);
+    const diagnostics = await collectFailedNodeDiagnostics(session.id);
+    throw new Error([
+      `ContainerLab deploy falhou: ${(deployResult.stderr || deployResult.stdout || deployResult.error.message).trim()}`,
+      diagnostics,
+    ].filter(Boolean).join('\n\n'));
   }
 
   // Descobre containers criados
@@ -196,6 +200,41 @@ async function provisionLab(session) {
   startGraphServer(session);
 
   return { success: true, containers: session.containers };
+}
+
+async function collectFailedNodeDiagnostics(sessionId) {
+  try {
+    const prefix = `clab-${sessionId}-`;
+    const { stdout: psOut } = await execAsync(
+      `docker ps -a --filter name=${shellQuote(prefix)} --format '{{.Names}} {{.Status}} {{.Image}}'`
+    );
+    const names = psOut
+      .trim()
+      .split('\n')
+      .map(line => line.trim().split(/\s+/)[0])
+      .filter(Boolean);
+
+    if (names.length === 0) return '';
+
+    const sections = [`Diagnóstico Docker dos nós:\n${psOut.trim()}`];
+    for (const name of names) {
+      const { stdout: inspectOut } = await execAsync(
+        `docker inspect -f 'exit={{.State.ExitCode}} error={{.State.Error}} oom={{.State.OOMKilled}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' ${shellQuote(name)} 2>/dev/null || true`
+      );
+      const { stdout: logsOut } = await execAsync(
+        `docker logs --tail=80 ${shellQuote(name)} 2>&1 || true`
+      );
+      sections.push([
+        `--- ${name} ---`,
+        inspectOut.trim(),
+        logsOut.trim() ? `logs:\n${logsOut.trim()}` : 'logs: (vazio)',
+      ].join('\n'));
+    }
+
+    return sections.join('\n');
+  } catch (e) {
+    return `Falha ao coletar diagnóstico Docker dos nós: ${e.message}`;
+  }
 }
 
 async function applyFrrFilePermissions(routerDir) {
@@ -306,6 +345,7 @@ function generateClabYaml(lab, session) {
   const nodes = Object.keys(lab.frr_configs).map(r => `    ${r}:
       kind: linux
       image: ${CONFIG.FRR_IMAGE}
+      privileged: true
       binds:
         - ${path.posix.join(hostLabDir, r, 'frr.conf')}:/etc/frr/frr.conf
         - ${path.posix.join(hostLabDir, r, 'daemons')}:/etc/frr/daemons
