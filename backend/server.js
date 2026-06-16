@@ -297,15 +297,15 @@ async function checkFrrContainerReady(containerName) {
     shellQuote(containerName),
     'sh -lc',
     shellQuote([
-      'for d in zebra bgpd staticd; do pgrep -x "$d" >/dev/null || exit 10; done',
-      'vtysh -c "show version" >/dev/null',
-      'vtysh -c "show interface brief" >/dev/null',
+      'vtysh -c "show version" >/tmp/frr-ready.out',
+      'vtysh -c "show interface brief" >>/tmp/frr-ready.out',
+      'vtysh -c "show bgp summary" >>/tmp/frr-ready.out',
     ].join(' && ')),
   ].join(' ');
 
-  const { stderr, error } = await runCommand(daemonCmd, '/', null, { timeout: 10000 });
+  const { stdout, stderr, error } = await runCommand(daemonCmd, '/', null, { timeout: 10000 });
   if (error) {
-    return { container: containerName, ready: false, reason: (stderr || error.message).trim() || 'daemons/vtysh ainda indisponíveis' };
+    return { container: containerName, ready: false, reason: (stderr || stdout || error.message).trim() || 'vtysh ainda indisponível' };
   }
 
   return { container: containerName, ready: true };
