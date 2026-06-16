@@ -136,7 +136,11 @@ No Portainer:
 Variáveis principais para VPS:
 
 ```env
+HTTP_BIND=127.0.0.1
 HTTP_PORT=8088
+BACKEND_BIND=127.0.0.1
+BACKEND_PORT=3000
+PORT=3000
 LAB_HOST_BASE_DIR=/opt/bgp-labs
 FRR_IMAGE=frrouting/frr:latest
 TEACHER_PASSWORD=sua-senha-forte
@@ -148,6 +152,47 @@ Use `HTTP_PORT=80` apenas se a porta 80 estiver livre no servidor. Se ja houver
 Nginx, Apache, Caddy ou outro proxy no host, mantenha uma porta alternativa como
 `8088` e configure o proxy existente para encaminhar o domínio para
 `http://127.0.0.1:8088`.
+
+Exemplo de ajuste para um Nginx do host que termina TLS:
+
+```nginx
+location /ws {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+    proxy_buffering off;
+}
+
+location /graph/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_read_timeout 60s;
+}
+
+location /api/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_read_timeout 120s;
+}
+
+location / {
+    proxy_pass http://127.0.0.1:8088;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+}
+```
 
 O `backend/.env.example` é útil para execução local direta com `node server.js`.
 Em Docker/Portainer, os valores entram pelas variáveis da Stack e são passados
