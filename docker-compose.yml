@@ -1,7 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════════════╗
 # ║  BGP Lab Platform — Docker Compose                                  ║
-# ║  Sobe: nginx (proxy), backend (Node.js), e permite execução de      ║
-# ║  ContainerLab via socket Docker do host.                            ║
+# ║  Sobe o frontend estático. Em VPS Linux, rode o backend/provisioner ║
+# ║  diretamente no host para o ContainerLab acessar namespaces.         ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
 services:
@@ -14,14 +14,16 @@ services:
     container_name: bgplab-nginx
     ports:
       - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8088}:80"
-    depends_on:
-      - backend
     restart: unless-stopped
     networks:
       - bgplab-mgmt
 
-  # ── Backend Node.js ───────────────────────────────────────────────────
+  # ── Backend Node.js containerizado ─────────────────────────────────────
+  # Use apenas para testes. Em VPS Linux/produção, prefira systemd no host,
+  # pois o ContainerLab precisa manipular namespaces diretamente no host.
   backend:
+    profiles:
+      - containerized-backend
     build:
       context: ./backend
       dockerfile: Dockerfile

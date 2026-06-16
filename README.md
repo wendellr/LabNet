@@ -115,42 +115,55 @@ docker compose up -d
 > namespaces do Docker. Use uma VM Linux local ou um servidor Linux para criar
 > as topologias FRR de alunos.
 
-### 6. Deploy via Portainer Stack a partir do GitHub
+### 6. Deploy via Portainer + backend no host Linux
 
-No servidor Linux, crie o diretório persistente dos labs:
+Em produção, deixe o Portainer servir apenas o frontend. Rode o backend/provisioner
+diretamente no host Linux, porque o ContainerLab precisa manipular namespaces,
+bridges e veths do Docker host sem atravessar outro container.
+
+No servidor Linux, instale Docker, Node.js 20+ e rode:
 
 ```bash
 sudo mkdir -p /opt/bgp-labs
+git clone https://github.com/wendellr/LabNet.git /opt/labnet
+cd /opt/labnet
+sudo HOST=127.0.0.1 \
+  PORT=3000 \
+  LAB_HOST_BASE_DIR=/opt/bgp-labs \
+  FRR_IMAGE=quay.io/frrouting/frr:10.5.0 \
+  TEACHER_PASSWORD='sua-senha-forte' \
+  TEACHER_EMAIL='professor@dominio.com' \
+  RESEND_API_KEY='re_xxx' \
+  bash scripts/install-host-backend.sh
 ```
 
-No Portainer:
+Teste o backend no host:
+
+```bash
+curl -i http://127.0.0.1:3000/api/health
+```
+
+Depois, no Portainer:
 
 1. Vá em **Stacks** → **Add stack**.
 2. Escolha **Repository**.
 3. Use o repositório: `https://github.com/wendellr/LabNet.git`.
 4. Branch: `main`.
 5. Compose path: `docker-compose.yml`.
-6. Em **Environment variables**, cadastre os valores do arquivo `stack.env.example`.
+6. Em **Environment variables**, use `HTTP_BIND=127.0.0.1` e `HTTP_PORT=8088`.
 7. Faça o deploy da stack.
 
-Variáveis principais para VPS:
+Variáveis da Stack Portainer:
 
 ```env
 HTTP_BIND=127.0.0.1
 HTTP_PORT=8088
-BACKEND_BIND=127.0.0.1
-PORT=3000
-LAB_HOST_BASE_DIR=/opt/bgp-labs
-FRR_IMAGE=quay.io/frrouting/frr:10.5.0
-TEACHER_PASSWORD=sua-senha-forte
-TEACHER_EMAIL=professor@dominio.com
-RESEND_API_KEY=re_xxx
 ```
 
-Use `HTTP_PORT=80` apenas se a porta 80 estiver livre no servidor. Se ja houver
-Nginx, Apache, Caddy ou outro proxy no host, mantenha uma porta alternativa como
-`8088` e configure o proxy existente para encaminhar o domínio para
-`http://127.0.0.1:8088`.
+Configure o Nginx do host para encaminhar o domínio para:
+
+- `/api`, `/ws`, `/graph` → `http://127.0.0.1:3000`
+- `/` → `http://127.0.0.1:8088`
 
 Exemplo de ajuste para um Nginx do host que termina TLS:
 
@@ -193,9 +206,7 @@ location / {
 }
 ```
 
-O `backend/.env.example` é útil para execução local direta com `node server.js`.
-Em Docker/Portainer, os valores entram pelas variáveis da Stack e são passados
-ao container pelo `docker-compose.yml`.
+O `backend/.env.example` documenta as variáveis do serviço systemd do backend.
 
 ---
 
