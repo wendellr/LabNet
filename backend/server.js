@@ -139,7 +139,7 @@ async function provisionLab(session) {
   const labDir = path.join(CONFIG.LAB_BASE_DIR, `session-${session.id}`);
   session.labDir = labDir;
   session.networkName = `${CONFIG.DOCKER_NETWORK_BASE}-${session.id}`;
-  session.mgmtSubnetOctet = allocateMgmtSubnetOctet(session.id);
+  session.mgmtSubnetOctet = await allocateMgmtSubnetOctet(session.id);
 
   logEvent('provision_start', { sessionId: session.id, labId: session.labId, student: session.studentName });
 
@@ -310,7 +310,7 @@ ${links}
 `;
 }
 
-function allocateMgmtSubnetOctet(sessionId) {
+async function allocateMgmtSubnetOctet(sessionId) {
   const used = new Set(
     [...sessions.values()]
       .filter(s => s.id !== sessionId && ['provisioning', 'running', 'idle'].includes(s.status))
@@ -318,11 +318,46 @@ function allocateMgmtSubnetOctet(sessionId) {
       .filter(Boolean)
   );
 
+  for (const octet of await getExistingDockerMgmtSubnetOctets()) {
+    used.add(octet);
+  }
+
   for (let octet = 200; octet < 200 + CONFIG.MAX_STUDENTS; octet++) {
     if (!used.has(octet)) return octet;
   }
 
   throw new Error('Não há subnets de gerência disponíveis para novas sessões');
+}
+
+async function getExistingDockerMgmtSubnetOctets() {
+  try {
+    const { stdout: namesOut } = await execAsync(`docker network ls --format '{{.Name}}'`);
+    const names = namesOut
+      .trim()
+      .split('\n')
+      .map(s => s.trim())
+      .filter(name => name.startsWith(`${CONFIG.DOCKER_NETWORK_BASE}-`));
+
+    if (names.length === 0) return [];
+
+    const { stdout: inspectOut } = await execAsync(
+      `docker network inspect ${names.map(shellQuote).join(' ')}`
+    );
+    const networks = JSON.parse(inspectOut || '[]');
+    const octets = [];
+
+    for (const network of networks) {
+      for (const cfg of network?.IPAM?.Config || []) {
+        const match = String(cfg.Subnet || '').match(/^10\.(\d+)\.0\.0\/24$/);
+        if (match) octets.push(parseInt(match[1], 10));
+      }
+    }
+
+    return octets;
+  } catch (e) {
+    console.log(`[mgmt-subnet] não foi possível inspecionar redes Docker existentes: ${e.message}`);
+    return [];
+  }
 }
 
 const FRR_DAEMONS = `zebra=yes
