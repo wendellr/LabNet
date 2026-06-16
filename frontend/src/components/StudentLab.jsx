@@ -507,6 +507,17 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
   const [score, setScore]                     = useState(null);
   const [toasts, pushToast]                   = useToasts();
   const labMeta  = LABS_META.find((l) => l.id === labId);
+  const exitTimerRef = useRef(null);
+
+  const exitToGate = useCallback((message) => {
+    if (exitTimerRef.current) return;
+    if (message) pushToast(message, "warning");
+    exitTimerRef.current = setTimeout(() => {
+      onExit();
+    }, 1200);
+  }, [onExit, pushToast]);
+
+  useEffect(() => () => clearTimeout(exitTimerRef.current), []);
 
   // Poll session status while provisioning
   useEffect(() => {
@@ -525,27 +536,28 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
         // Sessão encerrada pelo backend (ex: timeout de inatividade)
         if (s.status === "cleaned") {
           clearInterval(interval);
-          alert("Sessão encerrada por inatividade. Você será redirecionado para o início.");
-          onExit();
+          exitToGate("Sessão encerrada. Voltando ao menu de laboratórios...");
         }
       } catch (e) {
         // 404 = sessão não existe mais (backend reiniciou ou sessão expirou)
         if (e.status === 404 || e.message?.includes("não encontrada")) {
           clearInterval(interval);
-          alert("Sua sessão expirou ou o servidor foi reiniciado. Você será redirecionado para o início.");
-          onExit();
+          exitToGate("Sua sessão expirou ou foi encerrada. Voltando ao menu...");
         }
       }
     };
     poll();
     interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId, exitToGate]);
 
   const onWsMsg = useCallback((msg) => {
     if (msg.type === "status") {
       setProvisionStatus(msg.status);
       if (msg.message) setProvisionMsg(msg.message);
+      if (["cleaning", "cleaned"].includes(msg.status)) {
+        exitToGate(msg.message || "Sessão encerrada. Voltando ao menu...");
+      }
     }
     if (msg.type === "progress") {
       setProgress((p) => ({ ...p, [msg.stepId]: { completed: true } }));
@@ -554,7 +566,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
     if (msg.type === "notification") {
       pushToast(msg.message, msg.level || "info", msg.fromTeacher);
     }
-  }, []);
+  }, [exitToGate]);
 
   useWebSocket("student", sessionId, onWsMsg);
 

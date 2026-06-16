@@ -460,6 +460,7 @@ async function destroyLab(session) {
   if (!session.labDir) return;
   cleanupPtyProcesses(session.id);  // encerra terminais PTY ativos
   session.status = 'cleaning';
+  broadcast({ type: 'status', status: 'cleaning', message: 'Sessão encerrada pelo professor. Limpando recursos...' }, 'all', session.id);
   broadcastDashboard();
   logEvent('cleanup_start', { sessionId: session.id, reason: 'inactivity_or_manual' });
 
@@ -481,6 +482,7 @@ async function destroyLab(session) {
 
   session.status = 'cleaned';
   session.containers = [];
+  broadcast({ type: 'status', status: 'cleaned', message: 'Sessão encerrada. Voltando ao menu de laboratórios...' }, 'all', session.id);
   logEvent('cleanup_done', { sessionId: session.id });
   broadcastDashboard();
 }
