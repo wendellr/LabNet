@@ -157,7 +157,7 @@ async function provisionLab(session) {
   for (const [router, config] of Object.entries(lab.frr_configs)) {
     const routerDir = path.join(labDir, router);
     await fs.mkdir(routerDir, { recursive: true });
-    await fs.writeFile(path.join(routerDir, 'frr.conf'), config);
+    await fs.writeFile(path.join(routerDir, 'frr.conf'), normalizeFrrConfig(config));
     await fs.writeFile(path.join(routerDir, 'daemons'), FRR_DAEMONS);
     await fs.writeFile(path.join(routerDir, 'vtysh.conf'),
       `service integrated-vtysh-config\nhostname ${router}\n! Desabilita timeout idle de sessao vtysh\nline vty\n exec-timeout 0 0\n!\n`);
@@ -200,6 +200,13 @@ async function provisionLab(session) {
   startGraphServer(session);
 
   return { success: true, containers: session.containers };
+}
+
+function normalizeFrrConfig(config) {
+  return String(config)
+    .split('\n')
+    .filter(line => line.trim() !== 'no mpls kernel')
+    .join('\n');
 }
 
 async function collectFailedNodeDiagnostics(sessionId) {

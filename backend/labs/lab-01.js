@@ -22,7 +22,6 @@ module.exports = {
   frr_configs: {
     R1: `frr version 9.0
 frr defaults traditional
-no mpls kernel
 hostname R1
 log syslog informational
 no ipv6 forwarding
@@ -59,7 +58,6 @@ ip route 150.1.1.0/24 Null0
 `,
     R2: `frr version 9.0
 frr defaults traditional
-no mpls kernel
 hostname R2
 log syslog informational
 no ipv6 forwarding
@@ -96,7 +94,6 @@ ip route 150.2.2.0/24 Null0
 `,
     R3: `frr version 9.0
 frr defaults traditional
-no mpls kernel
 hostname R3
 log syslog informational
 no ipv6 forwarding
@@ -133,7 +130,6 @@ ip route 150.3.3.0/24 Null0
 `,
     R4: `frr version 9.0
 frr defaults traditional
-no mpls kernel
 hostname R4
 log syslog informational
 no ipv6 forwarding
