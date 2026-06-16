@@ -167,7 +167,7 @@ async function provisionLab(session) {
   // Deploy ContainerLab
   updateSessionStatus(session, 'provisioning', 'Iniciando containers...');
   const deployResult = await runCommand(
-    `sudo containerlab deploy -t ${path.join(labDir, 'topology.yml')} --reconfigure 2>&1`,
+    `sudo containerlab deploy -t ${path.join(labDir, 'topology.yml')} --reconfigure --max-workers 1 2>&1`,
     labDir, session, { timeout: 120000 }
   );
 

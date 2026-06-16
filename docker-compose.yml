@@ -48,8 +48,20 @@ services:
           create_host_path: true
           propagation: rshared
       - type: bind
+        source: ${DOCKER_NETNS_DIR:-/run/docker/netns}
+        target: /var/run/docker/netns
+        bind:
+          create_host_path: true
+          propagation: rshared
+      - type: bind
         source: ${HOST_NETNS_DIR:-/run/netns}
         target: /run/netns
+        bind:
+          create_host_path: true
+          propagation: rshared
+      - type: bind
+        source: ${HOST_NETNS_DIR:-/run/netns}
+        target: /var/run/netns
         bind:
           create_host_path: true
           propagation: rshared
