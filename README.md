@@ -106,10 +106,7 @@ npm run build      # produção → dist/
 ### 5. Docker Compose (alternativa)
 
 ```bash
-# Build do frontend
-docker compose --profile build up frontend-builder
-
-# Sobe toda a stack
+# Sobe toda a stack; o frontend React e gerado na imagem do nginx
 docker compose up -d
 ```
 
@@ -117,6 +114,38 @@ docker compose up -d
 > ContainerLab/FRR completo precisa de um kernel Linux com acesso a bridges e
 > namespaces do Docker. Use uma VM Linux local ou um servidor Linux para criar
 > as topologias FRR de alunos.
+
+### 6. Deploy via Portainer Stack a partir do GitHub
+
+No servidor Linux, crie o diretório persistente dos labs:
+
+```bash
+sudo mkdir -p /opt/bgp-labs
+```
+
+No Portainer:
+
+1. Vá em **Stacks** → **Add stack**.
+2. Escolha **Repository**.
+3. Use o repositório: `https://github.com/wendellr/LabNet.git`.
+4. Branch: `main`.
+5. Compose path: `docker-compose.yml`.
+6. Em **Environment variables**, cadastre os valores do arquivo `stack.env.example`.
+7. Faça o deploy da stack.
+
+Variáveis principais para VPS:
+
+```env
+LAB_HOST_BASE_DIR=/opt/bgp-labs
+FRR_IMAGE=frrouting/frr:latest
+TEACHER_PASSWORD=sua-senha-forte
+TEACHER_EMAIL=professor@dominio.com
+RESEND_API_KEY=re_xxx
+```
+
+O `backend/.env.example` é útil para execução local direta com `node server.js`.
+Em Docker/Portainer, os valores entram pelas variáveis da Stack e são passados
+ao container pelo `docker-compose.yml`.
 
 ---
 

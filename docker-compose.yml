@@ -8,15 +8,16 @@ services:
 
   # ── Nginx reverse proxy + frontend estático ──────────────────────────
   nginx:
-    image: nginx:alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: bgplab-nginx
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - frontend-dist:/usr/share/nginx/html:ro
     depends_on:
       - backend
     restart: unless-stopped
@@ -30,43 +31,27 @@ services:
       dockerfile: Dockerfile
     container_name: bgplab-backend
     environment:
-      - PORT=3000
-      - LAB_BASE_DIR=/opt/bgp-labs
-      - LAB_HOST_BASE_DIR=${PWD}/lab-sessions
-      - FRR_IMAGE=frrouting/frr:latest
+      - PORT=${PORT:-3000}
+      - LAB_BASE_DIR=${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
+      - LAB_HOST_BASE_DIR=${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
+      - FRR_IMAGE=${FRR_IMAGE:-frrouting/frr:latest}
+      - TEACHER_PASSWORD=${TEACHER_PASSWORD:-bgp@teach2025}
+      - TEACHER_EMAIL=${TEACHER_EMAIL:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
       - NODE_ENV=production
     volumes:
       # ⚠️  CRÍTICO: acesso ao Docker do host para criar containers ContainerLab
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       # Diretório compartilhado para arquivos de lab. O caminho do host tambem
-      # e usado nos binds gerados para os containers FRR.
-      - ${PWD}/lab-sessions:/opt/bgp-labs
-      - ${PWD}/lab-sessions:${PWD}/lab-sessions
+      # e usado nos binds gerados para os containers FRR. Em VPS Linux, mantenha
+      # LAB_HOST_BASE_DIR como caminho absoluto existente no host.
+      - ${LAB_HOST_BASE_DIR:-/opt/bgp-labs}:${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
     ports:
-      - "3000:3000"
+      - "${BACKEND_PORT:-3000}:${PORT:-3000}"
     networks:
       - bgplab-mgmt
     restart: unless-stopped
     privileged: true   # necessário para criar redes Docker e namespaces de rede
-
-  # ── Build do frontend (one-shot, popula o volume) ─────────────────────
-  frontend-builder:
-    image: node:20-alpine
-    container_name: bgplab-frontend-builder
-    working_dir: /app
-    command: sh -c "npm ci && npm run build -- --outDir /tmp/dist && cp -r /tmp/dist/* /output/"
-    volumes:
-      - ./frontend:/app
-      - frontend-node-modules:/app/node_modules
-      - frontend-dist:/output
-    profiles:
-      - build   # só executa com: docker compose --profile build up frontend-builder
-
-volumes:
-  frontend-dist:
-    driver: local
-  frontend-node-modules:
-    driver: local
 
 networks:
   bgplab-mgmt:
