@@ -39,6 +39,10 @@ services:
     volumes:
       # ⚠️  CRÍTICO: acesso ao Docker do host para criar containers ContainerLab
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      # ContainerLab precisa enxergar os network namespaces dos containers
+      # criados no Docker host para conectar os links da topologia.
+      - ${DOCKER_NETNS_DIR:-/var/run/docker/netns}:/var/run/docker/netns
+      - ${HOST_NETNS_DIR:-/var/run/netns}:/var/run/netns
       # Diretório compartilhado para arquivos de lab. O caminho do host tambem
       # e usado nos binds gerados para os containers FRR. Em VPS Linux, mantenha
       # LAB_HOST_BASE_DIR como caminho absoluto existente no host.
