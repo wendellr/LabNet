@@ -82,7 +82,7 @@ bash -c "$(curl -sL https://get.containerlab.dev)"
 ### 2. Pull da imagem FRR
 
 ```bash
-docker pull frrouting/frr:latest
+docker pull quay.io/frrouting/frr:10.5.0
 ```
 
 ### 3. Backend
@@ -141,7 +141,7 @@ HTTP_PORT=8088
 BACKEND_BIND=127.0.0.1
 PORT=3000
 LAB_HOST_BASE_DIR=/opt/bgp-labs
-FRR_IMAGE=frrouting/frr:latest
+FRR_IMAGE=quay.io/frrouting/frr:10.5.0
 TEACHER_PASSWORD=sua-senha-forte
 TEACHER_EMAIL=professor@dominio.com
 RESEND_API_KEY=re_xxx

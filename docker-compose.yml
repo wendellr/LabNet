@@ -31,7 +31,7 @@ services:
       - HOST=${BACKEND_BIND:-127.0.0.1}
       - LAB_BASE_DIR=${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
       - LAB_HOST_BASE_DIR=${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
-      - FRR_IMAGE=${FRR_IMAGE:-frrouting/frr:latest}
+      - FRR_IMAGE=${FRR_IMAGE:-quay.io/frrouting/frr:10.5.0}
       - TEACHER_PASSWORD=${TEACHER_PASSWORD:-bgp@teach2025}
       - TEACHER_EMAIL=${TEACHER_EMAIL:-}
       - RESEND_API_KEY=${RESEND_API_KEY:-}

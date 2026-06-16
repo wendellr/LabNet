@@ -42,7 +42,7 @@ const CONFIG = {
   HOST: process.env.HOST || '0.0.0.0',
   LAB_BASE_DIR: process.env.LAB_BASE_DIR || '/opt/bgp-labs',
   LAB_HOST_BASE_DIR: process.env.LAB_HOST_BASE_DIR || process.env.LAB_BASE_DIR || '/opt/bgp-labs',
-  FRR_IMAGE: process.env.FRR_IMAGE || 'frrouting/frr:latest',
+  FRR_IMAGE: process.env.FRR_IMAGE || 'quay.io/frrouting/frr:10.5.0',
   FRR_READY_TIMEOUT_MS: parseInt(process.env.FRR_READY_TIMEOUT_MS || '90000', 10),
   FRR_READY_INTERVAL_MS: parseInt(process.env.FRR_READY_INTERVAL_MS || '2000', 10),
   DOCKER_NETWORK_BASE: 'bgplab',

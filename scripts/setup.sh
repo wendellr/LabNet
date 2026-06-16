@@ -133,13 +133,13 @@ success "ContainerLab $(containerlab version 2>/dev/null | grep -i version | awk
 
 # ── 6. Pull imagem FRR ────────────────────────────────────────────────
 info "Verificando imagem FRR..."
-if ! docker image inspect frrouting/frr:latest &>/dev/null; then
+if ! docker image inspect quay.io/frrouting/frr:10.5.0 &>/dev/null; then
     info "Baixando imagem FRR (pode demorar ~2 min)..."
-    docker pull frrouting/frr:latest
+    docker pull quay.io/frrouting/frr:10.5.0
 else
     success "Imagem FRR já disponível localmente"
 fi
-success "frrouting/frr:latest — OK"
+success "quay.io/frrouting/frr:10.5.0 — OK"
 
 # ── 7. Limpeza de containers/labs anteriores ─────────────────────────
 info "Limpando containers BGP Lab anteriores..."
