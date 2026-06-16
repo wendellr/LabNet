@@ -41,8 +41,18 @@ services:
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       # ContainerLab precisa enxergar os network namespaces dos containers
       # criados no Docker host para conectar os links da topologia.
-      - ${DOCKER_NETNS_DIR:-/var/run/docker/netns}:/var/run/docker/netns
-      - ${HOST_NETNS_DIR:-/var/run/netns}:/var/run/netns
+      - type: bind
+        source: ${DOCKER_NETNS_DIR:-/run/docker/netns}
+        target: /run/docker/netns
+        bind:
+          create_host_path: true
+          propagation: rshared
+      - type: bind
+        source: ${HOST_NETNS_DIR:-/run/netns}
+        target: /run/netns
+        bind:
+          create_host_path: true
+          propagation: rshared
       # Diretório compartilhado para arquivos de lab. O caminho do host tambem
       # e usado nos binds gerados para os containers FRR. Em VPS Linux, mantenha
       # LAB_HOST_BASE_DIR como caminho absoluto existente no host.
