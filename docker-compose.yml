@@ -1,0 +1,73 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  BGP Lab Platform — Docker Compose                                  ║
+# ║  Sobe: nginx (proxy), backend (Node.js), e permite execução de      ║
+# ║  ContainerLab via socket Docker do host.                            ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+services:
+
+  # ── Nginx reverse proxy + frontend estático ──────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: bgplab-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - frontend-dist:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - bgplab-mgmt
+
+  # ── Backend Node.js ───────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bgplab-backend
+    environment:
+      - PORT=3000
+      - LAB_BASE_DIR=/opt/bgp-labs
+      - LAB_HOST_BASE_DIR=${PWD}/lab-sessions
+      - FRR_IMAGE=frrouting/frr:latest
+      - NODE_ENV=production
+    volumes:
+      # ⚠️  CRÍTICO: acesso ao Docker do host para criar containers ContainerLab
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Diretório compartilhado para arquivos de lab. O caminho do host tambem
+      # e usado nos binds gerados para os containers FRR.
+      - ${PWD}/lab-sessions:/opt/bgp-labs
+      - ${PWD}/lab-sessions:${PWD}/lab-sessions
+    ports:
+      - "3000:3000"
+    networks:
+      - bgplab-mgmt
+    restart: unless-stopped
+    privileged: true   # necessário para criar redes Docker e namespaces de rede
+
+  # ── Build do frontend (one-shot, popula o volume) ─────────────────────
+  frontend-builder:
+    image: node:20-alpine
+    container_name: bgplab-frontend-builder
+    working_dir: /app
+    command: sh -c "npm ci && npm run build -- --outDir /tmp/dist && cp -r /tmp/dist/* /output/"
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+      - frontend-dist:/output
+    profiles:
+      - build   # só executa com: docker compose --profile build up frontend-builder
+
+volumes:
+  frontend-dist:
+    driver: local
+  frontend-node-modules:
+    driver: local
+
+networks:
+  bgplab-mgmt:
+    driver: bridge

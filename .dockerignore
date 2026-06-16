@@ -1,0 +1,9 @@
+.git
+.gitignore
+backend/.env
+frontend/dist
+frontend/node_modules
+lab-sessions
+node_modules
+*.log
+*.pid

@@ -1,0 +1,12 @@
+# Dependências
+node_modules/
+frontend/dist/
+
+# Variáveis de ambiente — NUNCA commitar o .env real
+backend/.env
+
+# Logs e temporários
+*.log
+*.pid
+/opt/bgp-labs/
+lab-sessions/
