@@ -139,7 +139,6 @@ Variáveis principais para VPS:
 HTTP_BIND=127.0.0.1
 HTTP_PORT=8088
 BACKEND_BIND=127.0.0.1
-BACKEND_PORT=3000
 PORT=3000
 LAB_HOST_BASE_DIR=/opt/bgp-labs
 FRR_IMAGE=frrouting/frr:latest

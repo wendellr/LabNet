@@ -39,6 +39,7 @@ const CONFIG = {
   INACTIVITY_TIMEOUT_MS: 30 * 60 * 1000,   // 30 minutos
   CLEANUP_CHECK_INTERVAL_MS: 60 * 1000,     // verifica a cada 1 min
   PORT: process.env.PORT || 3000,
+  HOST: process.env.HOST || '0.0.0.0',
   LAB_BASE_DIR: process.env.LAB_BASE_DIR || '/opt/bgp-labs',
   LAB_HOST_BASE_DIR: process.env.LAB_HOST_BASE_DIR || process.env.LAB_BASE_DIR || '/opt/bgp-labs',
   FRR_IMAGE: process.env.FRR_IMAGE || 'frrouting/frr:latest',
@@ -1130,8 +1131,8 @@ function cleanupPtyProcesses(sessionId) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ─── Start ─────────────────────────────────────────────────────────────────
-server.listen(CONFIG.PORT, () => {
-  console.log(`🌐 BGP Lab Platform rodando na porta ${CONFIG.PORT}`);
+server.listen(CONFIG.PORT, CONFIG.HOST, () => {
+  console.log(`🌐 BGP Lab Platform rodando em ${CONFIG.HOST}:${CONFIG.PORT}`);
   console.log(`📁 Labs dir: ${CONFIG.LAB_BASE_DIR}`);
   console.log(`👥 Máx alunos: ${CONFIG.MAX_STUDENTS}`);
   console.log(`⏱  Auto-cleanup: ${CONFIG.INACTIVITY_TIMEOUT_MS / 60000} min`);

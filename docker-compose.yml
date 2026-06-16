@@ -28,6 +28,7 @@ services:
     container_name: bgplab-backend
     environment:
       - PORT=${PORT:-3000}
+      - HOST=${BACKEND_BIND:-127.0.0.1}
       - LAB_BASE_DIR=${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
       - LAB_HOST_BASE_DIR=${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
       - FRR_IMAGE=${FRR_IMAGE:-frrouting/frr:latest}
@@ -42,10 +43,7 @@ services:
       # e usado nos binds gerados para os containers FRR. Em VPS Linux, mantenha
       # LAB_HOST_BASE_DIR como caminho absoluto existente no host.
       - ${LAB_HOST_BASE_DIR:-/opt/bgp-labs}:${LAB_HOST_BASE_DIR:-/opt/bgp-labs}
-    ports:
-      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-3000}:${PORT:-3000}"
-    networks:
-      - bgplab-mgmt
+    network_mode: host
     restart: unless-stopped
     privileged: true   # necessário para criar redes Docker e namespaces de rede
 
