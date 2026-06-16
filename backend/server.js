@@ -345,7 +345,6 @@ function generateClabYaml(lab, session) {
   const nodes = Object.keys(lab.frr_configs).map(r => `    ${r}:
       kind: linux
       image: ${CONFIG.FRR_IMAGE}
-      privileged: true
       binds:
         - ${path.posix.join(hostLabDir, r, 'frr.conf')}:/etc/frr/frr.conf
         - ${path.posix.join(hostLabDir, r, 'daemons')}:/etc/frr/daemons
