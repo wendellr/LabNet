@@ -280,15 +280,22 @@ async function waitForFrrReady(session) {
 }
 
 async function checkFrrContainerReady(containerName) {
-  const inspectCmd = `docker inspect -f '{{.State.Running}} {{.State.Health.Status}}' ${shellQuote(containerName)} 2>/dev/null || true`;
+  const inspectCmd = `docker inspect ${shellQuote(containerName)} 2>/dev/null || true`;
   const { stdout: inspectOut } = await execAsync(inspectCmd);
-  const [running, health] = inspectOut.trim().split(/\s+/);
+  let inspect;
 
-  if (running !== 'true') {
+  try {
+    inspect = JSON.parse(inspectOut || '[]')[0];
+  } catch {
+    inspect = null;
+  }
+
+  if (!inspect?.State?.Running) {
     return { container: containerName, ready: false, reason: 'container não está running' };
   }
 
-  if (health && health !== '<no' && health !== 'healthy') {
+  const health = inspect.State.Health?.Status;
+  if (health && health !== 'healthy') {
     return { container: containerName, ready: false, reason: `health=${health}` };
   }
 
