@@ -136,12 +136,18 @@ No Portainer:
 Variáveis principais para VPS:
 
 ```env
+HTTP_PORT=8088
 LAB_HOST_BASE_DIR=/opt/bgp-labs
 FRR_IMAGE=frrouting/frr:latest
 TEACHER_PASSWORD=sua-senha-forte
 TEACHER_EMAIL=professor@dominio.com
 RESEND_API_KEY=re_xxx
 ```
+
+Use `HTTP_PORT=80` apenas se a porta 80 estiver livre no servidor. Se ja houver
+Nginx, Apache, Caddy ou outro proxy no host, mantenha uma porta alternativa como
+`8088` e configure o proxy existente para encaminhar o domínio para
+`http://127.0.0.1:8088`.
 
 O `backend/.env.example` é útil para execução local direta com `node server.js`.
 Em Docker/Portainer, os valores entram pelas variáveis da Stack e são passados
