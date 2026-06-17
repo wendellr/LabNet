@@ -349,6 +349,28 @@ Após aplicar a route-map, é necessário fazer um soft-reset com "clear bgp * s
 
 Em cada roteador, crie uma route-map com 'set metric VALOR' e aplique como política out para o vizinho 3.3.3.3.
 
+Exemplo no R2:
+  configure terminal
+  route-map SET_MED_R3 permit 10
+   set metric 2
+  exit
+  router bgp 2
+   address-family ipv4 unicast
+    neighbor 3.3.3.3 route-map SET_MED_R3 out
+  end
+  clear bgp * soft out
+
+Exemplo no R4:
+  configure terminal
+  route-map SET_MED_R3 permit 10
+   set metric 4
+  exit
+  router bgp 4
+   address-family ipv4 unicast
+    neighbor 3.3.3.3 route-map SET_MED_R3 out
+  end
+  clear bgp * soft out
+
 Após configurar ambos, verifique R3 — o caminho preferido provavelmente NÃO vai mudar ainda. Isso é esperado!`,
       commands: [
         { cmd: "show running-config", router: "R2", desc: "Confirme a route-map de MED no R2" },
