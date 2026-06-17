@@ -37,6 +37,7 @@ services:
       - TEACHER_PASSWORD=${TEACHER_PASSWORD:-bgp@teach2025}
       - TEACHER_EMAIL=${TEACHER_EMAIL:-}
       - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM=${RESEND_FROM:-onboarding@resend.dev}
       - NODE_ENV=production
     volumes:
       # ⚠️  CRÍTICO: acesso ao Docker do host para criar containers ContainerLab

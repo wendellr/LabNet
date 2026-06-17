@@ -23,7 +23,7 @@ const { Resend } = require('resend');
 // ─── Email (Resend) ──────────────────────────────────────────────────────────
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const TEACHER_EMAIL  = process.env.TEACHER_EMAIL  || '';
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+const RESEND_FROM    = process.env.RESEND_FROM || 'BGP Lab Platform <onboarding@resend.dev>';
 
 const app = express();
 const server = http.createServer(app);
@@ -664,7 +664,7 @@ app.post('/api/session/:id/submit', (req, res) => {
 
   // Envia resultado por email ao professor
   sendResultEmail(session, answers, score, feedback, verResults, answerResults).catch(e =>
-    console.error('[email] Falha ao enviar:', e.message)
+    console.error('[email] Falha ao enviar:', e.stack || e.message)
   );
 
   res.json({ score, feedback, verResults, answerResults });
@@ -674,11 +674,12 @@ app.post('/api/session/:id/submit', (req, res) => {
 async function sendResultEmail(session, answers, score, feedback, verResults = [], answerResults = []) {
   const emailTo  = runtimeConfig.teacherEmail || TEACHER_EMAIL;
   const emailKey = runtimeConfig.resendKey    || RESEND_API_KEY;
+  const emailFrom = runtimeConfig.resendFrom  || RESEND_FROM;
   if (!emailKey || !emailTo) {
     console.log('[email] RESEND_API_KEY ou TEACHER_EMAIL não configurado — email ignorado');
     return;
   }
-  const emailClient = new (require('resend').Resend)(emailKey);
+  const emailClient = new Resend(emailKey);
 
   const lab = LABS[session.labId];
   const labTitle = lab?.title || `Lab ${session.labId}`;
@@ -812,14 +813,19 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
 </body>
 </html>`;
 
-  await emailClient.emails.send({
-    from: 'BGP Lab Platform <onboarding@resend.dev>',
-    to: [TEACHER_EMAIL],
+  const result = await emailClient.emails.send({
+    from: emailFrom,
+    to: [emailTo],
     subject: `${subjectEmoji} [BGP Lab ${session.labId}] ${session.studentName} — ${score}/100`,
     html,
   });
 
-  console.log(`[email] Resultado de ${session.studentName} enviado para ${TEACHER_EMAIL} (score: ${score})`);
+  if (result?.error) {
+    throw new Error(result.error.message || JSON.stringify(result.error));
+  }
+
+  const messageId = result?.data?.id || result?.id || 'sem-id';
+  console.log(`[email] Resultado de ${session.studentName} enviado para ${emailTo} (score: ${score}, id: ${messageId})`);
 }
 
 // ─── Motor de Avaliação ────────────────────────────────────────────────────────
@@ -1042,24 +1048,22 @@ app.get('/api/health', (req, res) => {
 let runtimeConfig = {
   teacherEmail: process.env.TEACHER_EMAIL || '',
   resendKey:    process.env.RESEND_API_KEY || '',
+  resendFrom:   process.env.RESEND_FROM || '',
 };
 
 app.get('/api/config/email', (req, res) => {
   res.json({
     teacherEmail: runtimeConfig.teacherEmail,
+    resendFrom: runtimeConfig.resendFrom || RESEND_FROM,
     configured: !!(runtimeConfig.resendKey && runtimeConfig.teacherEmail),
   });
 });
 
 app.post('/api/config/email', (req, res) => {
-  const { teacherEmail, resendKey } = req.body;
+  const { teacherEmail, resendKey, resendFrom } = req.body;
   if (teacherEmail) runtimeConfig.teacherEmail = teacherEmail;
   if (resendKey)    runtimeConfig.resendKey    = resendKey;
-  // Reinicia cliente Resend com nova key
-  if (runtimeConfig.resendKey) {
-    const { Resend: R } = require('resend');
-    Object.assign(resend || {}, new R(runtimeConfig.resendKey));
-  }
+  if (resendFrom)   runtimeConfig.resendFrom   = resendFrom;
   res.json({ ok: true, configured: !!(runtimeConfig.resendKey && runtimeConfig.teacherEmail) });
 });
 

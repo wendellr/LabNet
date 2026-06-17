@@ -134,6 +134,7 @@ sudo HOST=127.0.0.1 \
   TEACHER_PASSWORD='sua-senha-forte' \
   TEACHER_EMAIL='professor@dominio.com' \
   RESEND_API_KEY='re_xxx' \
+  RESEND_FROM='onboarding@resend.dev' \
   bash scripts/install-host-backend.sh
 ```
 
