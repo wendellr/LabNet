@@ -158,7 +158,7 @@ async function provisionLab(session) {
     const routerDir = path.join(labDir, router);
     await fs.mkdir(routerDir, { recursive: true });
     await fs.writeFile(path.join(routerDir, 'frr.conf'), normalizeFrrConfig(config));
-    await fs.writeFile(path.join(routerDir, 'daemons'), FRR_DAEMONS);
+    await fs.writeFile(path.join(routerDir, 'daemons'), generateFrrDaemons(lab));
     await fs.writeFile(path.join(routerDir, 'vtysh.conf'),
       `service integrated-vtysh-config\nhostname ${router}\n! Desabilita timeout idle de sessao vtysh\nline vty\n exec-timeout 0 0\n!\n`);
     await applyFrrFilePermissions(routerDir);
@@ -455,6 +455,39 @@ zebra_options=" -s 90000000 -A 127.0.0.1"
 bgpd_options="   -A 127.0.0.1"
 staticd_options="-A 127.0.0.1"
 `;
+
+function generateFrrDaemons(lab) {
+  const overrides = lab.daemons || {};
+  if (!Object.keys(overrides).length) return FRR_DAEMONS;
+
+  const knownDaemons = [
+    'zebra', 'bgpd', 'ospfd', 'ospf6d', 'ripd', 'ripngd', 'isisd',
+    'pimd', 'ldpd', 'nhrpd', 'eigrpd', 'babeld', 'sharpd', 'staticd',
+    'pbrd', 'bfdd', 'fabricd', 'vrrpd', 'pathd',
+  ];
+
+  const lines = FRR_DAEMONS.split('\n').map(line => {
+    const match = line.match(/^([a-z0-9]+)=(yes|no)$/);
+    if (!match) return line;
+    const [, name] = match;
+    if (!Object.prototype.hasOwnProperty.call(overrides, name)) return line;
+    return `${name}=${overrides[name] ? 'yes' : 'no'}`;
+  });
+
+  for (const name of Object.keys(overrides)) {
+    if (knownDaemons.includes(name)) continue;
+    console.log(`[daemons] Ignorando daemon desconhecido no lab ${lab.id}: ${name}`);
+  }
+
+  return lines.join('\n');
+}
+
+function resourceProfileForLab(lab) {
+  const count = lab.routers?.length || 0;
+  if (count <= 4) return 'leve';
+  if (count <= 6) return 'moderado';
+  return 'pesado';
+}
 
 async function destroyLab(session) {
   if (!session.labDir) return;
@@ -1021,13 +1054,17 @@ app.post('/api/auth/teacher', (req, res) => {
 
 // ─── Labs API — serve dados do lab ao frontend ───────────────────────────────
 app.get('/api/labs', (req, res) => {
-  const meta = Object.values(LABS).map(l => ({
+  const meta = Object.values(LABS)
+  .filter(l => l.enabled !== false)
+  .map(l => ({
     id: l.id,
     title: l.title,
     topic: l.topic,
     difficulty: l.difficulty,
     duration: l.duration,
     routers: l.routers,
+    routerCount: l.routers?.length || 0,
+    resourceProfile: l.resourceProfile || resourceProfileForLab(l),
   }));
   res.json(meta);
 });

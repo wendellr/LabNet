@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../hooks/index.js";
 import { LABS_META, AVAILABLE_LAB_IDS, DIFF_STYLE } from "../data/labs.js";
 import { Badge } from "./UI.jsx";
@@ -10,8 +10,21 @@ export function SessionGate({ onSession, onTeacher }) {
   const [error, setError]         = useState(null);
   const [teacherPw, setTeacherPw] = useState("");
   const [showTeacher, setShowTeacher] = useState(false);
+  const [apiLabs, setApiLabs] = useState(null);
 
-  const availableLabs = LABS_META.filter((l) => AVAILABLE_LAB_IDS.includes(l.id));
+  useEffect(() => {
+    apiFetch("GET", "/labs")
+      .then((labs) => {
+        setApiLabs(labs);
+        if (labs.length && !labs.some((lab) => lab.id === labId))
+          setLabId(labs[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
+  const availableLabs = apiLabs?.length
+    ? apiLabs
+    : LABS_META.filter((l) => AVAILABLE_LAB_IDS.includes(l.id));
 
   const startLab = async () => {
     if (!name.trim()) return setError("Digite seu nome");
@@ -95,6 +108,11 @@ export function SessionGate({ onSession, onTeacher }) {
                           <span style={{ color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 13 }}>{lab.title}</span>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
+                          {lab.resourceProfile && (
+                            <Badge style={{ background: "#111827", color: "#9ca3af", border: "1px solid #374151" }}>
+                              {lab.routerCount || lab.routers?.length || "?"} FRR
+                            </Badge>
+                          )}
                           <Badge style={{ background: ds.bg, color: ds.color, border: `1px solid ${ds.border}` }}>{lab.difficulty}</Badge>
                           <Badge style={{ background: "#0a0f1a", color: "#475569", border: "1px solid #1e293b" }}>{lab.duration}</Badge>
                         </div>
@@ -103,10 +121,11 @@ export function SessionGate({ onSession, onTeacher }) {
                     </div>
                   );
                 })}
-                {/* Upcoming labs preview */}
-                <div style={{ padding: "10px 14px", background: "#020817", border: "1px dashed #1e293b", borderRadius: 8, opacity: 0.5 }}>
-                  <span style={{ color: "#334155", fontSize: 11 }}>Labs 3, 5–8, 10–16 — em breve...</span>
-                </div>
+                {!apiLabs?.length && (
+                  <div style={{ padding: "10px 14px", background: "#020817", border: "1px dashed #1e293b", borderRadius: 8, opacity: 0.5 }}>
+                    <span style={{ color: "#334155", fontSize: 11 }}>Labs 3, 5–8, 10–16 — em breve...</span>
+                  </div>
+                )}
               </div>
             </div>
 
