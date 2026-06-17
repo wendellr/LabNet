@@ -1,132 +1,85 @@
-# 🌐 BGP Lab Platform
+# LabNet - BGP Lab Platform
 
-Ambiente completo para laboratórios práticos de BGP com provisionamento automático de containers Docker/ContainerLab, suporte para até 15 alunos simultâneos e painel de monitoramento do professor.
+Plataforma web para laboratorios praticos de BGP com FRR, Containerlab e Docker.
+O sistema provisiona automaticamente uma topologia isolada por aluno e suporta ate
+15 alunos simultaneos, respeitando os recursos do servidor.
 
----
+## Estado Atual
 
-## 🏗️ Arquitetura
+- Frontend React/Vite servido por Nginx em container Docker.
+- Backend Node.js/Express rodando diretamente no host Linux via systemd.
+- Containerlab tambem roda no host Linux, nao dentro de container.
+- Roteadores dos labs usam `quay.io/frrouting/frr:10.5.0`.
+- Cada aluno recebe containers FRR proprios, com nomes `clab-<session>-<router>`.
+- Professor acompanha sessoes, comandos, progresso e notas.
+- Ao enviar respostas, o backend corrige, calcula a nota e envia relatorio por e-mail via Resend.
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    SERVIDOR LINUX (Ubuntu 22.04)                │
-│                                                                  │
-│  ┌──────────────┐    ┌─────────────────────────────────────┐   │
-│  │   Nginx :80  │    │     Backend Node.js :3000            │   │
-│  │  (proxy +    │◄──►│  - REST API + WebSocket              │   │
-│  │   frontend)  │    │  - Provisioner (ContainerLab/Docker) │   │
-│  └──────────────┘    │  - Session Manager (15 slots)        │   │
-│                       │  - Auto-cleanup (30min inativo)      │   │
-│  ┌────────────────────┴────────────────────────────────────┐ │   │
-│  │           Docker (via /var/run/docker.sock)              │ │   │
-│  │                                                          │ │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │ │   │
-│  │  │  Session A   │  │  Session B   │  │  Session C   │  │ │   │
-│  │  │  clab-aaa-   │  │  clab-bbb-   │  │  clab-ccc-   │  │ │   │
-│  │  │  ┌R1┐ ┌R2┐  │  │  ┌R1┐ ┌R2┐  │  │  ┌R1┐ ┌R2┐  │  │ │   │
-│  │  │  └──┘ └──┘  │  │  └──┘ └──┘  │  │  └──┘ └──┘  │  │ │   │
-│  │  │  FRR + BGP  │  │  FRR + BGP  │  │  FRR + BGP  │  │ │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  │ │   │
-│  └─────────────────────────────────────────────────────────┘ │   │
-└────────────────────────────────────────────────────────────────┘
-```
+## Por Que O Backend Roda No Host
 
-## 📦 Stack Tecnológica
+Em producao, o Containerlab precisa manipular diretamente namespaces, bridges e
+veths do Docker host. Rodar o provisionador dentro de outro container causou erros
+de namespace e criacao de links. Por isso, o desenho suportado em VPS Linux e:
 
-| Componente | Tecnologia | Função |
+- Portainer/Docker Compose: apenas frontend estatico.
+- Host Linux/systemd: backend/provisioner + Containerlab.
+- Host Nginx: TLS e proxy reverso.
+
+## Labs Disponiveis
+
+| Lab | Titulo | Perfil |
 |---|---|---|
-| **Roteadores** | FRR (Free Range Routing) latest | BGP, OSPF, RIP dentro dos containers |
-| **Orquestrador** | ContainerLab | Deploy/destroy de topologias de rede |
-| **Containers** | Docker | Isolamento por sessão de aluno |
-| **Backend** | Node.js + Express + WebSocket | API, provisionamento, avaliação |
-| **Frontend** | React + Vite | UI do aluno e do professor |
-| **Proxy** | Nginx | TLS, rate-limiting, SPA routing |
-| **Captura** | tcpdump + tshark/Wireshark | Análise de pacotes BGP |
+| 1 | MED e AS-Path Prepend | leve |
+| 2 | BGP Local Preference | leve |
+| 3 | BGP Path Control | leve |
+| 4 | BGP Confederations | moderado |
+| 5 | Bestpath AS-PATH Ignore e Aggregate Address | leve |
+| 6 | Community, AS-Path Prepend e Default Route | leve |
+| 7 | BGP Backdoor e AS-Path Prepend | leve, habilita OSPF |
+| 8 | AS-Path Prepend, Weight e Default Route | leve |
+| 9 | Route Reflector e BGP Communities | moderado |
 
----
+Os labs ficam em `backend/labs/lab-XX.js` e sao carregados automaticamente. Para
+ocultar um lab sem apagar o arquivo, use `enabled: false`.
 
-## 🚀 Instalação Rápida
+## Arquitetura De Producao
 
-### Requisitos mínimos do servidor
-- Ubuntu 22.04 / Debian 12
-- 8 GB RAM (suporta ~15 sessões simultâneas com 4 roteadores cada)
-- 4 vCPUs
-- 50 GB disco SSD
-- Docker instalado
+```text
+Internet
+  |
+Host Nginx :80/:443
+  |-- /api, /ws, /graph -> http://127.0.0.1:3000  (backend systemd)
+  |-- /                 -> http://127.0.0.1:8088  (frontend Portainer)
 
-### Deploy em um comando
+Backend host:
+  - Node.js/Express
+  - WebSocket
+  - Containerlab
+  - Docker CLI
+  - systemd service: labnet-backend
 
-```bash
-git clone <repo> bgp-lab-platform
-cd bgp-lab-platform
-sudo bash scripts/setup.sh
+Docker:
+  - bgplab-nginx: frontend estatico
+  - clab-<session>-R1/R2/...: roteadores FRR por aluno
 ```
 
-O script instala automaticamente:
-1. Node.js 20
-2. ContainerLab
-3. Docker (se não instalado)
-4. Imagem FRR
-5. Nginx
-6. Serviço systemd `bgplab-backend`
+## Requisitos Do Servidor
 
----
+- Linux VPS com Docker funcionando.
+- Node.js 20+.
+- Containerlab.
+- Nginx no host para TLS/proxy.
+- 4 vCPU e 8 GB RAM para ate cerca de 15 alunos em labs leves.
+- Mais RAM/CPU se muitos alunos usarem labs com 5+ roteadores simultaneamente.
 
-## 🔧 Configuração Manual
+## Deploy Do Backend No Host
 
-### 1. Instalar ContainerLab
-
-```bash
-bash -c "$(curl -sL https://get.containerlab.dev)"
-```
-
-### 2. Pull da imagem FRR
-
-```bash
-docker pull quay.io/frrouting/frr:10.5.0
-```
-
-### 3. Backend
-
-```bash
-cd backend
-npm install
-PORT=3000 LAB_BASE_DIR=/opt/bgp-labs node server.js
-```
-
-### 4. Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev        # desenvolvimento (proxy → :3000)
-# ou
-npm run build      # produção → dist/
-```
-
-### 5. Docker Compose (alternativa)
-
-```bash
-# Sobe toda a stack; o frontend React e gerado na imagem do nginx
-docker compose up -d
-```
-
-> Em macOS com Docker Desktop, a UI/API sobem localmente, mas o provisionamento
-> ContainerLab/FRR completo precisa de um kernel Linux com acesso a bridges e
-> namespaces do Docker. Use uma VM Linux local ou um servidor Linux para criar
-> as topologias FRR de alunos.
-
-### 6. Deploy via Portainer + backend no host Linux
-
-Em produção, deixe o Portainer servir apenas o frontend. Rode o backend/provisioner
-diretamente no host Linux, porque o ContainerLab precisa manipular namespaces,
-bridges e veths do Docker host sem atravessar outro container.
-
-No servidor Linux, instale Docker, Node.js 20+ e rode:
+No VPS:
 
 ```bash
 sudo mkdir -p /opt/bgp-labs
 git clone https://github.com/wendellr/LabNet.git /opt/labnet
 cd /opt/labnet
+
 sudo HOST=127.0.0.1 \
   PORT=3000 \
   LAB_HOST_BASE_DIR=/opt/bgp-labs \
@@ -138,224 +91,349 @@ sudo HOST=127.0.0.1 \
   bash scripts/install-host-backend.sh
 ```
 
-Teste o backend no host:
+O script:
+
+- copia o projeto para `/opt/labnet`;
+- instala dependencias do backend com `npm ci --omit=dev`;
+- cria `/opt/labnet/backend/.env`;
+- cria e inicia o servico `labnet-backend`.
+
+Comandos uteis:
 
 ```bash
+sudo systemctl status labnet-backend --no-pager
+sudo journalctl -u labnet-backend -f
 curl -i http://127.0.0.1:3000/api/health
+curl -s http://127.0.0.1:3000/api/labs
 ```
 
-Depois, no Portainer:
+Para atualizar o backend depois de novos commits:
 
-1. Vá em **Stacks** → **Add stack**.
-2. Escolha **Repository**.
-3. Use o repositório: `https://github.com/wendellr/LabNet.git`.
+```bash
+cd /opt/labnet
+sudo git pull
+sudo systemctl restart labnet-backend
+```
+
+## Deploy Do Frontend Pelo Portainer
+
+No Portainer:
+
+1. `Stacks` -> `Add stack`.
+2. Escolha `Repository`.
+3. Repository URL: `https://github.com/wendellr/LabNet.git`.
 4. Branch: `main`.
 5. Compose path: `docker-compose.yml`.
-6. Em **Environment variables**, use `HTTP_BIND=127.0.0.1` e `HTTP_PORT=8088`.
-7. Faça o deploy da stack.
-
-Variáveis da Stack Portainer:
+6. Configure as variaveis:
 
 ```env
 HTTP_BIND=127.0.0.1
 HTTP_PORT=8088
 ```
 
-Configure o Nginx do host para encaminhar o domínio para:
+O `docker-compose.yml` padrao sobe apenas o frontend (`bgplab-nginx`) em
+`127.0.0.1:8088`.
 
-- `/api`, `/ws`, `/graph` → `http://127.0.0.1:3000`
-- `/` → `http://127.0.0.1:8088`
+O servico `backend` existe no compose somente para testes e fica atras do profile
+`containerized-backend`. Em VPS/producao, nao use esse backend containerizado.
 
-Exemplo de ajuste para um Nginx do host que termina TLS:
+Depois de commits que mudem o frontend, faca redeploy da stack no Portainer.
+
+## Nginx Do Host
+
+Exemplo para `labnet.ioda.com.br` com certificados LetsEncrypt ja existentes:
 
 ```nginx
-location /ws {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-    proxy_read_timeout 86400s;
-    proxy_send_timeout 86400s;
-    proxy_buffering off;
+server {
+    listen 80;
+    server_name labnet.ioda.com.br;
+    return 301 https://$host$request_uri;
 }
 
-location /graph/ {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_read_timeout 60s;
-}
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name labnet.ioda.com.br;
 
-location /api/ {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_read_timeout 120s;
-}
+    ssl_certificate /etc/letsencrypt/live/labnet.ioda.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/labnet.ioda.com.br/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
 
-location / {
-    proxy_pass http://127.0.0.1:8088;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
+    location /ws {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        proxy_buffering off;
+    }
+
+    location /graph/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_read_timeout 60s;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 120s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8088;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
 }
 ```
 
-O `backend/.env.example` documenta as variáveis do serviço systemd do backend.
+Depois:
 
----
-
-## 👥 Fluxo do Aluno
-
-1. Acessa `http://<servidor>`
-2. Digita nome e escolhe o laboratório
-3. Backend provisiona automaticamente os containers FRR da sessão via ContainerLab (~30-60s). Cada aluno ativo recebe seus próprios containers e uma subnet de gerência isolada.
-4. Interface carrega com:
-   - **📋 Roteiro** — passo a passo guiado com comandos copiáveis
-   - **💻 Terminal** — terminal vtysh real para cada roteador (↑↓ histórico)
-   - **🏆 Desafio** — avaliação com questões abertas e múltipla escolha
-   - **🔬 Captura** — atalhos para tcpdump e análise de pacotes
-5. Sessão encerra automaticamente após **30 minutos de inatividade**
-6. Resultado salvo e visível para o professor
-
----
-
-## 👨‍🏫 Painel do Professor
-
-Acesse `http://<servidor>` → **Acesso do Professor** → senha: `bgp@teach2025`
-
-### Funcionalidades
-- **Visão Geral** — capacidade (15 slots), sessões ativas, estatísticas
-- **Barra de Capacidade** — visualização em tempo real dos slots ocupados
-- **Sessões** — lista com status, progresso, score, idle time
-- **Histórico de Comandos** — todos os comandos executados por cada aluno
-- **Eventos em Tempo Real** — provision, cleanup, submits, erros via WebSocket
-- **Encerrar Sessão** — força cleanup imediato de qualquer container
-- **Broadcast de Mensagens** — envia notificações para um ou todos os alunos
-
----
-
-## ⏱️ Auto-Cleanup
-
-O sistema monitora inatividade continuamente:
-
-| Tempo inativo | Ação |
-|---|---|
-| 20 min | Aviso enviado ao aluno ("sessão será encerrada em 10 min") |
-| 30 min | Cleanup automático: `containerlab destroy`, remoção de containers e arquivos |
-
-Cleanup manual: professor pode encerrar qualquer sessão pelo painel.
-
----
-
-## 📊 Avaliação Automática
-
-Além das questões do desafio, o sistema detecta automaticamente:
-
-- Sessões BGP estabelecidas (`Established` no output)
-- Tabela BGP com prefixos corretos
-- Atributos configurados (`as-path prepend`, `local-preference`, `metric`)
-- Comandos específicos por roteador e resultado esperado
-
-Cada check automático concluído gera um badge de progresso visível para o professor em tempo real.
-
----
-
-## 🔐 Segurança
-
-- Sandbox por sessão: cada aluno tem containers completamente isolados
-- Comandos bloqueados: `rm -rf /`, `shutdown`, `reboot`, `halt`, `mkfs`, `dd`
-- Rate limiting no Nginx: 30 req/min (API), 60 req/min (exec)
-- Backend não exposto diretamente (nginx proxy)
-- Senha do professor configurável via variável de ambiente
-
-### Alterar senha do professor
-
-Em `frontend/App.jsx`, linha com `teacherPw === "bgp@teach2025"`:
-```javascript
-if (teacherPw === "SUA_NOVA_SENHA") onTeacher();
-```
-
-Ou via variável de ambiente (recomendado):
 ```bash
-TEACHER_PASSWORD=minha_senha node server.js
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
----
+## Variaveis Do Backend
 
-## 📁 Estrutura do Projeto
+Arquivo real no VPS:
 
+```text
+/opt/labnet/backend/.env
 ```
-bgp-lab-platform/
+
+Exemplo:
+
+```env
+HOST=127.0.0.1
+PORT=3000
+LAB_BASE_DIR=/opt/bgp-labs
+LAB_HOST_BASE_DIR=/opt/bgp-labs
+FRR_IMAGE=quay.io/frrouting/frr:10.5.0
+TEACHER_PASSWORD=sua-senha-forte
+TEACHER_EMAIL=professor@dominio.com
+RESEND_API_KEY=re_xxx
+RESEND_FROM=onboarding@resend.dev
+NODE_ENV=production
+```
+
+## Email Com Resend
+
+O envio de e-mail ocorre quando o aluno envia as respostas do desafio.
+
+Importante sobre a Resend:
+
+- Em modo teste, a Resend so permite enviar para o e-mail dono da conta.
+- Para enviar para outros destinatarios, verifique um dominio em `resend.com/domains`.
+- Depois de verificar o dominio, use um remetente desse dominio em `RESEND_FROM`.
+
+Exemplo para teste:
+
+```env
+TEACHER_EMAIL=seu-email-da-conta-resend@gmail.com
+RESEND_FROM=onboarding@resend.dev
+```
+
+Exemplo para producao com dominio verificado:
+
+```env
+TEACHER_EMAIL=professor@dominio.com
+RESEND_FROM=no-reply@seudominioverificado.com.br
+```
+
+Evite colocar nome com espacos no `RESEND_FROM` dentro do `EnvironmentFile` do
+systemd. Prefira o e-mail puro.
+
+Teste de envio direto no VPS:
+
+```bash
+cd /opt/labnet/backend
+sudo node -e "
+require('dotenv').config({ path: './.env' });
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
+resend.emails.send({
+  from: process.env.RESEND_FROM || 'onboarding@resend.dev',
+  to: [process.env.TEACHER_EMAIL],
+  subject: 'Teste LabNet Resend',
+  html: '<p>Teste de envio do LabNet.</p>'
+}).then(r => console.log(JSON.stringify(r, null, 2)))
+  .catch(e => { console.error(e); process.exit(1); });
+"
+```
+
+Logs de e-mail:
+
+```bash
+sudo journalctl -u labnet-backend -n 200 --no-pager | grep -i email
+```
+
+## Fluxo Do Aluno
+
+1. Acessa o dominio do LabNet.
+2. Digita nome e escolhe o lab.
+3. Backend provisiona a topologia Containerlab da sessao.
+4. Aluno usa o terminal `vtysh` dos roteadores FRR.
+5. Aluno segue roteiro, executa verificacoes e responde ao desafio.
+6. Ao enviar respostas, recebe nota e feedback.
+7. Professor recebe relatorio por e-mail se Resend estiver configurado.
+
+## Painel Do Professor
+
+O professor acessa pela tela inicial usando `TEACHER_PASSWORD`.
+
+Recursos:
+
+- sessoes ativas;
+- progresso dos alunos;
+- historico de comandos;
+- eventos em tempo real;
+- encerramento manual de sessao;
+- broadcast de mensagens;
+- score final.
+
+Quando o professor encerra uma sessao, a tela do aluno volta automaticamente para o menu.
+
+## Auto-Cleanup
+
+O backend remove sessoes inativas:
+
+- aviso apos cerca de 20 minutos;
+- cleanup apos cerca de 30 minutos;
+- `containerlab destroy --cleanup`;
+- parada do graph server da sessao;
+- limpeza dos terminais PTY.
+
+## Avaliacao
+
+Cada lab pode ter:
+
+- `autoGrade`: checkpoints de progresso enquanto o aluno executa comandos;
+- `verifications`: criterios tecnicos usados na nota final;
+- `challenge.questions`: questoes objetivas;
+- `answerKey`: gabarito e pontuacao.
+
+O relatorio por e-mail inclui:
+
+- aluno;
+- lab;
+- score;
+- verificacoes tecnicas;
+- respostas;
+- historico recente de comandos.
+
+## Estrutura Do Projeto
+
+```text
+.
 ├── backend/
-│   ├── server.js          # API + WebSocket + provisioner
-│   ├── labs-data.js       # Topologias, configs FRR, regras de avaliação
-│   ├── package.json
-│   └── Dockerfile
+│   ├── server.js
+│   ├── labs-data.js
+│   ├── labs/
+│   │   ├── index.js
+│   │   ├── lab-01.js
+│   │   └── ...
+│   └── .env.example
 ├── frontend/
-│   ├── App.jsx            # React — aluno + professor
-│   ├── main.jsx
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.js
-├── nginx/
+│   ├── src/
+│   ├── Dockerfile
 │   └── nginx.conf
-├── docker-compose.yml
 ├── scripts/
-│   └── setup.sh           # Instalação automática
+│   └── install-host-backend.sh
+├── docker-compose.yml
+├── stack.env.example
 └── README.md
 ```
 
----
+Para criar, editar ou ocultar labs, veja `backend/labs/README.md`.
 
-## 🧪 Laboratórios Disponíveis
+## Troubleshooting
 
-| Lab | Título | Dificuldade | Roteadores |
-|---|---|---|---|
-| 1 | MED e AS-Path Prepend | Iniciante | R1, R2, R3, R4 |
-| 2 | BGP Local Preference | Iniciante | R1, R2, R3, R4 |
-| 4 | BGP Confederations | Avançado | R1, R2, R3, R4, R5 |
-| 9 | Community + Route Reflector | Avançado | RR, R1, R2, R3, R4 |
-
-Adicionar novo laboratório: adicione entrada em `backend/labs-data.js` com `frr_configs`, `links`, `autoGrade` e `steps`.
-
----
-
-## 🐛 Troubleshooting
+Ver backend:
 
 ```bash
-# Ver logs do backend
-sudo journalctl -u bgplab-backend -f
-
-# Listar containers ativos de todas as sessões
-sudo docker ps --filter "name=clab-"
-
-# Forçar limpeza de todos os labs órfãos
-sudo docker ps -q --filter "name=clab-" | xargs docker rm -f
-
-# Verificar se ContainerLab funciona manualmente
-sudo containerlab deploy -t /opt/bgp-labs/session-*/topology.yml
-
-# Reiniciar backend
-sudo systemctl restart bgplab-backend
+sudo systemctl status labnet-backend --no-pager
+sudo journalctl -u labnet-backend -f
 ```
 
----
+Ver API:
 
-## 📈 Escalabilidade
+```bash
+curl -i http://127.0.0.1:3000/api/health
+curl -s http://127.0.0.1:3000/api/labs
+```
 
-Para mais de 15 alunos simultâneos, aumente `MAX_STUDENTS` em `server.js` e ajuste os recursos:
+Ver frontend:
 
-| Alunos | RAM recomendada | vCPUs |
-|---|---|---|
-| 15 (padrão) | 8 GB | 4 |
-| 30 | 16 GB | 8 |
-| 60 | 32 GB | 16 |
+```bash
+docker ps | grep bgplab-nginx
+curl -i http://127.0.0.1:8088
+```
 
-Cada sessão com 4 roteadores FRR consome ~300-400 MB RAM.
+Listar containers de labs:
+
+```bash
+sudo docker ps --filter "name=clab-"
+```
+
+Limpar labs orfaos com cuidado:
+
+```bash
+sudo containerlab destroy -t /opt/bgp-labs/session-<id>/topology.yml --cleanup
+```
+
+Se novos labs nao aparecem no frontend:
+
+1. Confira se o backend host foi atualizado:
+
+```bash
+cd /opt/labnet
+sudo git pull
+sudo systemctl restart labnet-backend
+curl -s http://127.0.0.1:3000/api/labs
+```
+
+2. Se a API ja mostra os labs novos, faca redeploy da stack no Portainer.
+3. Limpe cache do navegador ou teste em janela anonima.
+
+## Desenvolvimento Local
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Backend:
+
+```bash
+cd backend
+npm install
+HOST=127.0.0.1 PORT=3000 LAB_BASE_DIR=/tmp/bgp-labs node server.js
+```
+
+Em macOS/Windows, a UI e API podem rodar localmente, mas o provisionamento completo
+com Containerlab deve ser testado em Linux com Docker/Containerlab no host.
+
+Build do frontend como no deploy:
+
+```bash
+docker compose build nginx
+```
