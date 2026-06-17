@@ -18,7 +18,7 @@ export const LABS_META = [
   { id: 16, title: "BGP ORF Capability",            difficulty: "Avançado",     duration: "70 min", topic: "Outbound Route Filtering" },
 ];
 
-export const AVAILABLE_LAB_IDS = [1, 2, 3, 4, 5, 9];
+export const AVAILABLE_LAB_IDS = [1, 2, 3, 4, 5, 6, 9];
 
 export const DIFF_STYLE = {
   "Iniciante":     { bg: "#052e16", color: "#4ade80", border: "#166534" },
