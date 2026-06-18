@@ -92,19 +92,41 @@ function inferLinkType(lab, from, to, explicitType) {
 export function TopologyDiagram({ lab, sessionStatus = "default", compact = false }) {
   const [hovered, setHovered] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [customPositions, setCustomPositions] = useState({});
   const svgRef = useRef(null);
-
-  if (!lab) return null;
+  const draggingRef = useRef(null);
+  const draggedRef = useRef(false);
+  const positionsKey = lab?.id ? `labnet-topology-${lab.id}-${compact ? "compact" : "full"}` : null;
 
   const W = compact ? 540 : 700;
   const H = compact ? 240 : 340;
+
+  useEffect(() => {
+    if (!positionsKey) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(positionsKey) || "{}");
+      setCustomPositions(saved && typeof saved === "object" ? saved : {});
+    } catch {
+      setCustomPositions({});
+    }
+  }, [positionsKey]);
+
+  useEffect(() => {
+    if (!positionsKey || compact) return;
+    localStorage.setItem(positionsKey, JSON.stringify(customPositions));
+  }, [positionsKey, customPositions, compact]);
+
+  if (!lab) return null;
 
   // Monta lista de nodes a partir dos dados do lab
   const rawNodes = lab.routers
     ? lab.routers.map((r, i) => ({ id: r, label: r }))
     : Object.keys(lab.frr_configs || {}).map((r) => ({ id: r, label: r }));
 
-  const positioned = computeLayout(rawNodes, lab.links || [], W, H);
+  const positioned = computeLayout(rawNodes, lab.links || [], W, H).map((node) => ({
+    ...node,
+    ...(customPositions[node.id] || {}),
+  }));
 
   // Mapeia links
   const links = (lab.links || []).map((l) => {
@@ -126,14 +148,65 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
 
   const tooltip = selected ? positioned.find((n) => n.id === selected) : null;
 
+  const svgPointFromEvent = (event) => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return null;
+    return point.matrixTransform(matrix.inverse());
+  };
+
+  const moveDraggedNode = (event) => {
+    const nodeId = draggingRef.current;
+    if (!nodeId) return;
+    const point = svgPointFromEvent(event);
+    if (!point) return;
+    draggedRef.current = true;
+    const marginX = compact ? 32 : 44;
+    const marginY = compact ? 28 : 36;
+    const px = Math.max(marginX, Math.min(W - marginX, Math.round(point.x)));
+    const py = Math.max(marginY, Math.min(H - marginY, Math.round(point.y)));
+    setCustomPositions((prev) => ({ ...prev, [nodeId]: { px, py } }));
+  };
+
+  const stopDragging = () => {
+    draggingRef.current = null;
+  };
+
+  const resetLayout = () => {
+    setCustomPositions({});
+    if (positionsKey) localStorage.removeItem(positionsKey);
+    setSelected(null);
+  };
+
   return (
     <div style={{ position: "relative", background: "#020817", borderRadius: 8, overflow: "hidden", border: "1px solid #1e3a5f" }}>
+      {!compact && Object.keys(customPositions).length > 0 && (
+        <button
+          type="button"
+          onClick={resetLayout}
+          style={{
+            position: "absolute", top: 8, left: 8, zIndex: 11,
+            background: "#0a1628", border: "1px solid #334155", color: "#94a3b8",
+            borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 10,
+            fontFamily: "monospace",
+          }}
+        >
+          Resetar layout
+        </button>
+      )}
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         width="100%"
         height={H}
-        style={{ display: "block" }}
+        style={{ display: "block", touchAction: "none" }}
+        onPointerMove={moveDraggedNode}
+        onPointerUp={stopDragging}
+        onPointerLeave={stopDragging}
       >
         <defs>
           <marker id="arr-ebgp" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
@@ -218,10 +291,21 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
 
           return (
             <g key={node.id}
-              onClick={() => setSelected(isSel ? null : node.id)}
+              onClick={() => {
+                if (draggedRef.current) {
+                  draggedRef.current = false;
+                  return;
+                }
+                setSelected(isSel ? null : node.id);
+              }}
+              onPointerDown={(event) => {
+                draggingRef.current = node.id;
+                draggedRef.current = false;
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+              }}
               onMouseEnter={() => setHovered(node.id)}
               onMouseLeave={() => setHovered(null)}
-              style={{ cursor: "pointer" }}
+              style={{ cursor: draggingRef.current === node.id ? "grabbing" : "grab" }}
               filter={isSel ? "url(#glow-selected)" : isHov ? "url(#glow-node)" : "none"}
             >
               {/* Halo de seleção */}
