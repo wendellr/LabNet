@@ -34,8 +34,13 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // ─── Config ────────────────────────────────────────────────────────────────
+function envInt(name, fallback, min = 1) {
+  const parsed = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+}
+
 const CONFIG = {
-  MAX_STUDENTS: 15,
+  MAX_STUDENTS: envInt('MAX_STUDENTS', 15),
   INACTIVITY_TIMEOUT_MS: 30 * 60 * 1000,   // 30 minutos
   CLEANUP_CHECK_INTERVAL_MS: 60 * 1000,     // verifica a cada 1 min
   PORT: process.env.PORT || 3000,

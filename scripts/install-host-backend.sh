@@ -34,6 +34,7 @@ npm ci --omit=dev
 cat > "$APP_DIR/backend/.env" <<EOF
 HOST=${HOST:-127.0.0.1}
 PORT=${PORT:-3000}
+MAX_STUDENTS=${MAX_STUDENTS:-15}
 LAB_BASE_DIR=${LAB_DIR}
 LAB_HOST_BASE_DIR=${LAB_DIR}
 FRR_IMAGE=${FRR_IMAGE:-quay.io/frrouting/frr:10.5.0}

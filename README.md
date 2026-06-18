@@ -82,6 +82,7 @@ cd /opt/labnet
 
 sudo HOST=127.0.0.1 \
   PORT=3000 \
+  MAX_STUDENTS=15 \
   LAB_HOST_BASE_DIR=/opt/bgp-labs \
   FRR_IMAGE=quay.io/frrouting/frr:10.5.0 \
   TEACHER_PASSWORD='sua-senha-forte' \
@@ -222,6 +223,7 @@ Exemplo:
 ```env
 HOST=127.0.0.1
 PORT=3000
+MAX_STUDENTS=15
 LAB_BASE_DIR=/opt/bgp-labs
 LAB_HOST_BASE_DIR=/opt/bgp-labs
 FRR_IMAGE=quay.io/frrouting/frr:10.5.0
