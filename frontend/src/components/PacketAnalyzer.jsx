@@ -17,8 +17,22 @@ const BGP_NOTIFICATION_CODES = {
 };
 
 const MSG_COLORS = {
-  OPEN: "#4ade80", UPDATE: "#60a5fa", NOTIFICATION: "#f87171",
-  KEEPALIVE: "#475569", "ROUTE-REFRESH": "#a78bfa",
+  OPEN: "#86efac", UPDATE: "#7dd3fc", NOTIFICATION: "#fca5a5",
+  KEEPALIVE: "#cbd5e1", "ROUTE-REFRESH": "#c4b5fd",
+};
+
+const WIRESHARK = {
+  bg: "#020817",
+  panel: "#08111f",
+  panelAlt: "#0d1726",
+  header: "#111c2e",
+  border: "#334155",
+  borderStrong: "#475569",
+  text: "#e2e8f0",
+  muted: "#94a3b8",
+  subtle: "#64748b",
+  dim: "#475569",
+  selected: "#12315a",
 };
 
 // ─── Parse tshark/tcpdump output into structured BGP packets ──────────────────
@@ -249,18 +263,18 @@ export function PacketAnalyzer({ sessionId, lab, containers }) {
   const TYPES_WITH_COUNT = ["ALL", "OPEN", "UPDATE", "KEEPALIVE", "NOTIFICATION"];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", fontFamily: "monospace", background: "#020817" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", fontFamily: "monospace", background: WIRESHARK.bg }}>
       {/* ── Toolbar ── */}
-      <div style={{ background: "#0a0f1a", borderBottom: "1px solid #1e293b", padding: "8px 14px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", flexShrink: 0 }}>
+      <div style={{ background: WIRESHARK.header, borderBottom: `1px solid ${WIRESHARK.border}`, padding: "8px 14px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", flexShrink: 0 }}>
         {/* Router selector */}
         <select value={captureRouter} onChange={(e) => setCaptureRouter(e.target.value)}
-          style={{ background: "#020817", border: "1px solid #1e3a5f", color: "#e2e8f0", padding: "5px 10px", borderRadius: 6, fontSize: 12 }}>
+          style={{ background: WIRESHARK.bg, border: `1px solid ${WIRESHARK.borderStrong}`, color: WIRESHARK.text, padding: "5px 10px", borderRadius: 6, fontSize: 12 }}>
           {routers.map((r) => <option key={r}>{r}</option>)}
         </select>
 
         {/* Command selector */}
         <select value={captureCmd} onChange={(e) => setCaptureCmd(e.target.value)}
-          style={{ background: "#020817", border: "1px solid #1e3a5f", color: "#e2e8f0", padding: "5px 10px", borderRadius: 6, fontSize: 12, flex: 1, minWidth: 160 }}>
+          style={{ background: WIRESHARK.bg, border: `1px solid ${WIRESHARK.borderStrong}`, color: WIRESHARK.text, padding: "5px 10px", borderRadius: 6, fontSize: 12, flex: 1, minWidth: 160 }}>
           {CAPTURE_COMMANDS.map((c) => (
             <option key={c.cmd} value={c.cmd}>{c.label}</option>
           ))}
@@ -268,57 +282,61 @@ export function PacketAnalyzer({ sessionId, lab, containers }) {
 
         {/* Capture button */}
         <button onClick={capture} disabled={capturing || !sessionId}
-          style={{ background: capturing ? "#1e293b" : "#064e3b", border: "1px solid #166534", color: "#4ade80", padding: "5px 16px", borderRadius: 6, cursor: capturing ? "not-allowed" : "pointer", fontSize: 12 }}>
+          style={{ background: capturing ? "#1e293b" : "#064e3b", border: "1px solid #22c55e", color: capturing ? WIRESHARK.subtle : "#bbf7d0", padding: "5px 16px", borderRadius: 6, cursor: capturing ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}>
           {capturing ? "⏳" : "▶"} {capturing ? "Capturando..." : "Capturar"}
         </button>
 
         {/* Auto refresh */}
-        <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 11, color: autoRefresh ? "#4ade80" : "#475569" }}>
+        <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 11, color: autoRefresh ? "#86efac" : WIRESHARK.muted }}>
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} style={{ accentColor: "#4ade80" }} />
           Auto 5s
         </label>
 
         {/* Clear */}
         <button onClick={() => { setPackets([]); setSelected(null); setLog([]); }}
-          style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>
+          style={{ background: "none", border: `1px solid ${WIRESHARK.border}`, color: WIRESHARK.muted, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>
           ⌫ Limpar
         </button>
 
-        <div style={{ marginLeft: "auto", color: "#475569", fontSize: 11 }}>
+        <div style={{ marginLeft: "auto", color: WIRESHARK.muted, fontSize: 11 }}>
           {filtered.length} pacotes
         </div>
       </div>
 
+      <div style={{ background: WIRESHARK.panel, borderBottom: `1px solid ${WIRESHARK.border}`, padding: "6px 14px", color: WIRESHARK.muted, fontSize: 10, lineHeight: 1.45 }}>
+        Dados reais do FRR via comandos executados nos containers. A lista abaixo é uma decodificação estilo Wireshark desses outputs, não um mock e não um arquivo PCAP bruto.
+      </div>
+
       {/* ── Filter bar ── */}
-      <div style={{ background: "#0a0f1a", borderBottom: "1px solid #1e293b", padding: "6px 14px", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+      <div style={{ background: WIRESHARK.header, borderBottom: `1px solid ${WIRESHARK.border}`, padding: "6px 14px", display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
         {TYPES_WITH_COUNT.map((t) => {
           const count = t === "ALL" ? packets.length : packets.filter((p) => p.type === t).length;
           const active = filter === t;
-          const col = MSG_COLORS[t] || "#475569";
+          const col = MSG_COLORS[t] || WIRESHARK.muted;
           return (
             <button key={t} onClick={() => setFilter(t)}
-              style={{ background: active ? "#0d1f3c" : "none", border: `1px solid ${active ? col : "#1e293b"}`, color: active ? col : "#475569", padding: "3px 10px", borderRadius: 4, cursor: "pointer", fontSize: 10 }}>
+              style={{ background: active ? WIRESHARK.selected : "none", border: `1px solid ${active ? col : WIRESHARK.border}`, color: active ? col : WIRESHARK.muted, padding: "3px 10px", borderRadius: 4, cursor: "pointer", fontSize: 10, fontWeight: active ? 700 : 500 }}>
               {t} {count > 0 && <span style={{ opacity: 0.7 }}>({count})</span>}
             </button>
           );
         })}
         <input value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Filtrar por IP, prefixo..."
-          style={{ marginLeft: "auto", background: "#020817", border: "1px solid #1e293b", borderRadius: 4, color: "#e2e8f0", padding: "3px 10px", fontSize: 11, width: 180 }} />
+          style={{ marginLeft: "auto", background: WIRESHARK.bg, border: `1px solid ${WIRESHARK.border}`, borderRadius: 4, color: WIRESHARK.text, padding: "3px 10px", fontSize: 11, width: 180 }} />
       </div>
 
       {/* ── Main panel: packet list + detail ── */}
       <div style={{ flex: 1, display: "grid", gridTemplateRows: "1fr 1fr", overflow: "hidden" }}>
 
         {/* Packet list */}
-        <div style={{ overflowY: "auto", borderBottom: "1px solid #1e293b" }}>
+        <div style={{ overflowY: "auto", borderBottom: `1px solid ${WIRESHARK.border}` }}>
           {/* Header */}
-          <div style={{ display: "grid", gridTemplateColumns: "40px 80px 100px 100px 1fr", gap: 4, padding: "4px 10px", background: "#0a0f1a", borderBottom: "1px solid #1e293b", fontSize: 10, color: "#334155", position: "sticky", top: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "40px 80px 100px 100px 1fr", gap: 4, padding: "4px 10px", background: WIRESHARK.header, borderBottom: `1px solid ${WIRESHARK.border}`, fontSize: 10, color: WIRESHARK.muted, position: "sticky", top: 0, fontWeight: 700 }}>
             <span>No.</span><span>Hora</span><span>Origem</span><span>Destino</span><span>Info</span>
           </div>
 
           {filtered.length === 0 && (
-            <div style={{ color: "#1e293b", fontSize: 11, padding: "24px 14px", textAlign: "center" }}>
+            <div style={{ color: WIRESHARK.subtle, fontSize: 11, padding: "24px 14px", textAlign: "center" }}>
               {packets.length === 0
                 ? "← Selecione um roteador e clique em Capturar"
                 : "Nenhum pacote corresponde ao filtro"}
@@ -326,38 +344,38 @@ export function PacketAnalyzer({ sessionId, lab, containers }) {
           )}
 
           {filtered.map((pkt, i) => {
-            const col = MSG_COLORS[pkt.type] || "#475569";
+            const col = MSG_COLORS[pkt.type] || WIRESHARK.muted;
             const isSel = selected?.no === pkt.no && selected?.time === pkt.time;
             return (
               <div key={i} onClick={() => setSelected(pkt)}
-                style={{ display: "grid", gridTemplateColumns: "40px 80px 100px 100px 1fr", gap: 4, padding: "3px 10px", background: isSel ? "#0d1f3c" : i % 2 === 0 ? "#020817" : "#040c1a", cursor: "pointer", borderLeft: `3px solid ${isSel ? col : "transparent"}`, fontSize: 11 }}>
-                <span style={{ color: "#334155" }}>{pkt.no}</span>
-                <span style={{ color: "#475569" }}>{pkt.time}</span>
-                <span style={{ color: "#94a3b8" }}>{pkt.src}</span>
-                <span style={{ color: "#94a3b8" }}>{pkt.dst}</span>
-                <span style={{ color: col }}>{pkt.best ? "▶ " : ""}{pkt.info}</span>
+                style={{ display: "grid", gridTemplateColumns: "40px 80px 100px 100px 1fr", gap: 4, padding: "4px 10px", background: isSel ? WIRESHARK.selected : i % 2 === 0 ? WIRESHARK.bg : WIRESHARK.panel, cursor: "pointer", borderLeft: `3px solid ${isSel ? col : "transparent"}`, fontSize: 11 }}>
+                <span style={{ color: WIRESHARK.subtle }}>{pkt.no}</span>
+                <span style={{ color: WIRESHARK.muted }}>{pkt.time}</span>
+                <span style={{ color: WIRESHARK.text }}>{pkt.src}</span>
+                <span style={{ color: WIRESHARK.text }}>{pkt.dst}</span>
+                <span style={{ color: col, fontWeight: isSel ? 700 : 500 }}>{pkt.best ? "▶ " : ""}{pkt.info}</span>
               </div>
             );
           })}
         </div>
 
         {/* Packet detail */}
-        <div style={{ overflowY: "auto", background: "#020817" }}>
+        <div style={{ overflowY: "auto", background: WIRESHARK.bg }}>
           {!selected ? (
-            <div style={{ color: "#1e293b", fontSize: 11, padding: "20px 14px" }}>
+            <div style={{ color: WIRESHARK.subtle, fontSize: 11, padding: "20px 14px" }}>
               Selecione um pacote para ver detalhes
             </div>
           ) : (
             <div style={{ padding: "10px 14px" }}>
               {/* Header do pacote */}
               <div style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ background: "#0d1f3c", color: MSG_COLORS[selected.type] || "#60a5fa", padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: "bold" }}>
+                <span style={{ background: WIRESHARK.selected, color: MSG_COLORS[selected.type] || "#60a5fa", padding: "3px 10px", borderRadius: 4, fontSize: 11, fontWeight: "bold", border: `1px solid ${WIRESHARK.border}` }}>
                   BGP {selected.type}
                 </span>
-                <span style={{ color: "#475569", fontSize: 11 }}>
+                <span style={{ color: WIRESHARK.muted, fontSize: 11 }}>
                   {selected.src} → {selected.dst}
                 </span>
-                <span style={{ color: "#334155", fontSize: 10 }}>{selected.time}</span>
+                <span style={{ color: WIRESHARK.subtle, fontSize: 10 }}>{selected.time}</span>
               </div>
 
               {/* Árvore de decode estilo Wireshark */}
@@ -365,10 +383,10 @@ export function PacketAnalyzer({ sessionId, lab, containers }) {
 
               {/* Raw output */}
               <details style={{ marginTop: 8 }}>
-                <summary style={{ color: "#475569", fontSize: 10, cursor: "pointer", marginBottom: 4 }}>
+                <summary style={{ color: WIRESHARK.muted, fontSize: 10, cursor: "pointer", marginBottom: 4 }}>
                   Raw output
                 </summary>
-                <pre style={{ color: "#334155", fontSize: 9, overflowX: "auto", background: "#0a0f1a", padding: "6px 10px", borderRadius: 4 }}>
+                <pre style={{ color: "#cbd5e1", fontSize: 9, overflowX: "auto", background: WIRESHARK.header, padding: "6px 10px", borderRadius: 4, border: `1px solid ${WIRESHARK.border}` }}>
                   {selected.raw}
                 </pre>
               </details>
@@ -379,9 +397,9 @@ export function PacketAnalyzer({ sessionId, lab, containers }) {
 
       {/* ── Log ── */}
       {log.length > 0 && (
-        <div style={{ background: "#0a0f1a", borderTop: "1px solid #1e293b", padding: "4px 14px", maxHeight: 60, overflowY: "auto", flexShrink: 0 }}>
+        <div style={{ background: WIRESHARK.header, borderTop: `1px solid ${WIRESHARK.border}`, padding: "4px 14px", maxHeight: 60, overflowY: "auto", flexShrink: 0 }}>
           {log.slice(-5).map((l, i) => (
-            <div key={i} style={{ color: "#334155", fontSize: 9 }}>{l}</div>
+            <div key={i} style={{ color: WIRESHARK.muted, fontSize: 9 }}>{l}</div>
           ))}
         </div>
       )}
@@ -403,18 +421,18 @@ function BGPDecodeTree({ packet }) {
   const sessionAttrs = packet.attrs.filter((a) => ["PEER", "STATE", "UPTIME"].includes(a.name));
 
   return (
-    <div style={{ fontSize: 11, fontFamily: "monospace" }}>
+    <div style={{ fontSize: 11, fontFamily: "monospace", color: WIRESHARK.text }}>
       {/* ── BGP Header ── */}
       <TreeNode
         open={open.header}
         onToggle={() => toggle("header")}
         label="Border Gateway Protocol"
-        color="#e2e8f0"
+        color={WIRESHARK.text}
         depth={0}
       >
         <TreeLeaf label="Type" value={`${packet.type} (${Object.entries(BGP_MSG_TYPES).find(([, v]) => v === packet.type)?.[0] || "?"})`} color={col} depth={1} />
-        <TreeLeaf label="Source" value={packet.src} color="#94a3b8" depth={1} />
-        <TreeLeaf label="Destination" value={packet.dst} color="#94a3b8" depth={1} />
+        <TreeLeaf label="Source" value={packet.src} color={WIRESHARK.text} depth={1} />
+        <TreeLeaf label="Destination" value={packet.dst} color={WIRESHARK.text} depth={1} />
       </TreeNode>
 
       {/* ── Path Attributes (UPDATE) ── */}
@@ -459,7 +477,7 @@ function BGPDecodeTree({ packet }) {
 
       {/* Caso sem atributos parseados */}
       {packet.attrs.length === 0 && (
-        <div style={{ color: "#334155", padding: "6px 20px", fontSize: 10 }}>
+        <div style={{ color: WIRESHARK.subtle, padding: "6px 20px", fontSize: 10 }}>
           Nenhum atributo decodificado — execute um dos comandos de captura para obter detalhes
         </div>
       )}
@@ -473,10 +491,10 @@ function TreeNode({ open, onToggle, label, color, depth, children }) {
   return (
     <div>
       <div onClick={onToggle} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 4px", paddingLeft: indent + 4, cursor: "pointer", borderRadius: 3 }}
-        onMouseEnter={(e) => e.currentTarget.style.background = "#0a0f1a"}
+        onMouseEnter={(e) => e.currentTarget.style.background = WIRESHARK.panelAlt}
         onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-        <span style={{ color: "#475569", fontSize: 10 }}>{open ? "▼" : "▶"}</span>
-        <span style={{ color }}>{label}</span>
+        <span style={{ color: WIRESHARK.muted, fontSize: 10 }}>{open ? "▼" : "▶"}</span>
+        <span style={{ color, fontWeight: 700 }}>{label}</span>
       </div>
       {open && <div>{children}</div>}
     </div>
@@ -503,15 +521,15 @@ function TreeLeaf({ label, value, color, depth, badge, badgeColor }) {
     <div style={{ display: "flex", gap: 8, padding: "2px 4px", paddingLeft: indent + 20, alignItems: "flex-start" }}
       onMouseEnter={() => help && setShowHelp(true)}
       onMouseLeave={() => setShowHelp(false)}>
-      <span style={{ color: "#475569", minWidth: 130, flexShrink: 0 }}>{label}:</span>
-      <span style={{ color }}>
+      <span style={{ color: WIRESHARK.muted, minWidth: 130, flexShrink: 0 }}>{label}:</span>
+      <span style={{ color, fontWeight: 600 }}>
         {value}
         {badge && <span style={{ marginLeft: 6, background: badgeColor, color: "#4ade80", padding: "1px 5px", borderRadius: 3, fontSize: 9 }}>{badge}</span>}
-        {help && <span style={{ marginLeft: 4, color: "#334155", fontSize: 9, cursor: "help" }}>ⓘ</span>}
+        {help && <span style={{ marginLeft: 4, color: WIRESHARK.muted, fontSize: 9, cursor: "help" }}>ⓘ</span>}
       </span>
       {showHelp && help && (
-        <div style={{ position: "fixed", background: "#0d1f3c", border: "1px solid #1e3a5f", color: "#94a3b8", padding: "8px 12px", borderRadius: 6, fontSize: 10, maxWidth: 280, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.6)", lineHeight: 1.5 }}>
-          <strong style={{ color: "#60a5fa" }}>{label}</strong><br />{help}
+        <div style={{ position: "fixed", background: WIRESHARK.selected, border: `1px solid ${WIRESHARK.borderStrong}`, color: WIRESHARK.text, padding: "8px 12px", borderRadius: 6, fontSize: 10, maxWidth: 280, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.6)", lineHeight: 1.5 }}>
+          <strong style={{ color: "#7dd3fc" }}>{label}</strong><br />{help}
         </div>
       )}
     </div>
@@ -538,13 +556,13 @@ function PathAttrDecode({ attr, depth }) {
 
   const displayVal = DETAIL[attr.name] ? DETAIL[attr.name](attr.value) : attr.value;
   const col = {
-    ORIGIN: "#fbbf24",
-    AS_PATH: "#60a5fa",
-    NEXT_HOP: "#4ade80",
-    LOCAL_PREF: "#fb923c",
-    MED: "#a78bfa",
-    COMMUNITY: "#f87171",
-  }[attr.name] || "#94a3b8";
+    ORIGIN: "#fde68a",
+    AS_PATH: "#7dd3fc",
+    NEXT_HOP: "#86efac",
+    LOCAL_PREF: "#fdba74",
+    MED: "#c4b5fd",
+    COMMUNITY: "#fca5a5",
+  }[attr.name] || WIRESHARK.text;
 
   return <TreeLeaf label={attr.name} value={displayVal} color={col} depth={depth} />;
 }
