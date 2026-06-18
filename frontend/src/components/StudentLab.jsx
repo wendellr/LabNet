@@ -789,7 +789,7 @@ function getRoutersFromSteps(steps, labId) {
 function getLinksFromSteps(steps, labId) {
   const LINKS = {
     1: [["R1","eth1","R2","eth1"],["R2","eth2","R3","eth1"],["R3","eth2","R4","eth1"],["R1","eth2","R4","eth2"]],
-    2: [["R1","eth1","R2","eth1"],["R2","eth2","R3","eth1"],["R1","eth2","R4","eth1"]],
+    2: [["R1","eth1","R2","eth1"],["R1","eth2","R3","eth1"],["R2","eth2","R4","eth1"]],
     4: [["R1","eth1","R2","eth1"],["R2","eth2","R3","eth1"],["R3","eth2","R4","eth1"],["R1","eth2","R5","eth1"]],
     9: [["RR","eth1","R1","eth1"],["RR","eth2","R2","eth1"],["R1","eth2","R3","eth1"],["R2","eth2","R4","eth1"]],
   };

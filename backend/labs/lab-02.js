@@ -26,13 +26,13 @@ const lab = {
       "eth1"
     ],
     [
-      "R2",
+      "R1",
       "eth2",
       "R3",
       "eth1"
     ],
     [
-      "R1",
+      "R2",
       "eth2",
       "R4",
       "eth1"
@@ -315,7 +315,7 @@ router bgp 1
  exit-address-family
 !
 ip route 10.0.0.2/32 10.1.1.2
-ip route 20.0.0.1/32 10.2.1.2
+ip route 20.0.0.1/32 10.1.2.2
 `,
     R2: `frr version 9.0
 hostname R2
@@ -345,7 +345,7 @@ router bgp 1
  exit-address-family
 !
 ip route 10.0.0.1/32 10.1.1.1
-ip route 30.0.0.1/32 10.1.2.2
+ip route 30.0.0.1/32 10.2.1.2
 `,
     R3: `frr version 9.0
 hostname R3
@@ -367,7 +367,7 @@ router bgp 3
   neighbor 10.0.0.1 activate
  exit-address-family
 !
-ip route 10.0.0.1/32 10.2.1.1
+ip route 10.0.0.1/32 10.1.2.1
 `,
     R4: `frr version 9.0
 hostname R4
@@ -389,7 +389,7 @@ router bgp 2
   neighbor 10.0.0.2 activate
  exit-address-family
 !
-ip route 10.0.0.2/32 10.1.2.1
+ip route 10.0.0.2/32 10.2.1.1
 `
 };
 

@@ -36,8 +36,8 @@ function computeLayout(nodes, links, width = 700, height = 340) {
 }
 
 // ─── Cores por tipo de sessão/link ────────────────────────────────────────────
-const LINK_COLOR  = { eBGP: "#00d4ff", iBGP: "#a78bfa", Confed: "#fb923c", "RR-client": "#4ade80" };
-const LINK_DASH   = { iBGP: "6 3", Confed: "4 2" };
+const LINK_COLOR  = { eBGP: "#00d4ff", iBGP: "#a78bfa", Confed: "#fb923c", "RR-client": "#4ade80", L3: "#94a3b8" };
+const LINK_DASH   = { iBGP: "6 3", Confed: "4 2", L3: "3 3" };
 const NODE_STATUS_COLOR = {
   running: "#4ade80", provisioning: "#fbbf24", error: "#f87171", default: "#00d4ff",
 };
@@ -60,12 +60,23 @@ function hostAddress(address) {
   return (address || "").split("/")[0];
 }
 
+function routerAddresses(details) {
+  return new Set((details?.interfaces || []).flatMap((iface) => iface.addresses || []).map(hostAddress));
+}
+
+function hasBgpNeighborTo(source, target) {
+  const targetAddresses = routerAddresses(target);
+  return (source?.neighbors || []).some((neighbor) => targetAddresses.has(neighbor.ip));
+}
+
 function inferLinkType(lab, from, to, explicitType) {
   if (explicitType) return explicitType;
 
   const a = getRouterDetails(lab, from);
   const b = getRouterDetails(lab, to);
   if (!a || !b) return "eBGP";
+  const hasSession = hasBgpNeighborTo(a, b) || hasBgpNeighborTo(b, a);
+  if (!hasSession) return "L3";
 
   const aLoopback = hostAddress(a.loopback);
   const bLoopback = hostAddress(b.loopback);
