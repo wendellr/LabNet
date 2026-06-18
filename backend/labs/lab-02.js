@@ -316,6 +316,7 @@ router bgp 1
 !
 ip route 10.0.0.2/32 10.1.1.2
 ip route 20.0.0.1/32 10.1.2.2
+ip route 10.10.0.0/24 Null0
 `,
     R2: `frr version 9.0
 hostname R2
@@ -346,6 +347,7 @@ router bgp 1
 !
 ip route 10.0.0.1/32 10.1.1.1
 ip route 30.0.0.1/32 10.2.1.2
+ip route 10.20.0.0/24 Null0
 `,
     R3: `frr version 9.0
 hostname R3
@@ -368,6 +370,7 @@ router bgp 3
  exit-address-family
 !
 ip route 10.0.0.1/32 10.1.2.1
+ip route 20.20.0.0/24 Null0
 `,
     R4: `frr version 9.0
 hostname R4
@@ -390,6 +393,7 @@ router bgp 2
  exit-address-family
 !
 ip route 10.0.0.2/32 10.2.1.1
+ip route 30.30.0.0/24 Null0
 `
 };
 
