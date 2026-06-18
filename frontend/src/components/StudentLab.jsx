@@ -29,8 +29,7 @@ function CommandBlock({ entry }) {
 }
 
 // ─── RoteiroTab ───────────────────────────────────────────────────────────
-function RoteiroTab({ labId, onRunCmd, progress, onGoChallenge }) {
-  const [step, setStep] = useState(0);
+function RoteiroTab({ labId, step, setStep, onRunCmd, progress, onGoChallenge }) {
   const [labData, setLabData] = useState(null);
 
   // Busca dados do lab no backend (fonte autoritativa)
@@ -47,7 +46,8 @@ function RoteiroTab({ labId, onRunCmd, progress, onGoChallenge }) {
   if (!steps.length)
     return <div style={{ padding: 24, color: "#475569" }}>Roteiro em preparação para este laboratório.</div>;
 
-  const cur = steps[step];
+  const safeStep = Math.min(step, steps.length - 1);
+  const cur = steps[safeStep];
   return (
     <div style={{ flex: 1, display: "grid", gridTemplateColumns: "190px 1fr", overflow: "hidden" }}>
       {/* Sidebar */}
@@ -56,12 +56,12 @@ function RoteiroTab({ labId, onRunCmd, progress, onGoChallenge }) {
           const done = progress[`step_${s.id}`]?.completed;
           return (
             <div key={i} onClick={() => setStep(i)}
-              style={{ padding: "12px 14px", borderBottom: "1px solid #1e293b", cursor: "pointer", background: step === i ? "#0d1f3c" : "transparent", borderLeft: step === i ? "3px solid #00d4ff" : "3px solid transparent" }}>
+              style={{ padding: "12px 14px", borderBottom: "1px solid #1e293b", cursor: "pointer", background: safeStep === i ? "#0d1f3c" : "transparent", borderLeft: safeStep === i ? "3px solid #00d4ff" : "3px solid transparent" }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                <span style={{ width: 20, height: 20, borderRadius: "50%", background: done ? "#166534" : step === i ? "#0ea5e9" : "#1e293b", color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                <span style={{ width: 20, height: 20, borderRadius: "50%", background: done ? "#166534" : safeStep === i ? "#0ea5e9" : "#1e293b", color: "#fff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
                   {done ? "✓" : i + 1}
                 </span>
-                <span style={{ color: step === i ? "#e2e8f0" : "#64748b", fontSize: 11, lineHeight: 1.3 }}>{s.title}</span>
+                <span style={{ color: safeStep === i ? "#e2e8f0" : "#64748b", fontSize: 11, lineHeight: 1.3 }}>{s.title}</span>
               </div>
             </div>
           );
@@ -75,7 +75,7 @@ function RoteiroTab({ labId, onRunCmd, progress, onGoChallenge }) {
       {/* Content */}
       <div style={{ overflowY: "auto", padding: 20 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
-          <span style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#6366f1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#fff", flexShrink: 0 }}>{step + 1}</span>
+          <span style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#6366f1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#fff", flexShrink: 0 }}>{safeStep + 1}</span>
           <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 16 }}>{cur.title}</h3>
         </div>
 
@@ -114,12 +114,12 @@ function RoteiroTab({ labId, onRunCmd, progress, onGoChallenge }) {
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}
-            style={{ background: step === 0 ? "#0a0f1a" : "#0f172a", border: "1px solid #1e293b", color: step === 0 ? "#1e293b" : "#60a5fa", padding: "7px 16px", borderRadius: 6, cursor: step === 0 ? "not-allowed" : "pointer", fontSize: 12 }}>
+          <button onClick={() => setStep(Math.max(0, safeStep - 1))} disabled={safeStep === 0}
+            style={{ background: safeStep === 0 ? "#0a0f1a" : "#0f172a", border: "1px solid #1e293b", color: safeStep === 0 ? "#1e293b" : "#60a5fa", padding: "7px 16px", borderRadius: 6, cursor: safeStep === 0 ? "not-allowed" : "pointer", fontSize: 12 }}>
             ← Anterior
           </button>
-          {step < steps.length - 1 ? (
-            <button onClick={() => setStep(step + 1)}
+          {safeStep < steps.length - 1 ? (
+            <button onClick={() => setStep(safeStep + 1)}
               style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", color: "#fff", border: "none", padding: "7px 16px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
               Próximo Passo →
             </button>
@@ -505,6 +505,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
   const [progress, setProgress]               = useState({});
   const [session, setSession]                 = useState(null);
   const [score, setScore]                     = useState(null);
+  const [roteiroStep, setRoteiroStep]         = useState(0);
   const [toasts, pushToast]                   = useToasts();
   const labMeta  = LABS_META.find((l) => l.id === labId);
   const exitTimerRef = useRef(null);
@@ -648,7 +649,14 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
 
         {/* Abas renderizadas condicionalmente (desmontam ao sair — OK) */}
         {activeTab === "roteiro" && (
-          <RoteiroTab labId={labId} onRunCmd={handleRunCmd} progress={progress} onGoChallenge={() => setActiveTab("challenge")} />
+          <RoteiroTab
+            labId={labId}
+            step={roteiroStep}
+            setStep={setRoteiroStep}
+            onRunCmd={handleRunCmd}
+            progress={progress}
+            onGoChallenge={() => setActiveTab("challenge")}
+          />
         )}
         {activeTab === "topology" && (
           <TopologyTab labId={labId} sessionStatus={provisionStatus} session={session} sessionId={sessionId} />
