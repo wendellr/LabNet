@@ -56,6 +56,27 @@ function shortAddr(address) {
   return address || "";
 }
 
+function hostAddress(address) {
+  return (address || "").split("/")[0];
+}
+
+function inferLinkType(lab, from, to, explicitType) {
+  if (explicitType) return explicitType;
+
+  const a = getRouterDetails(lab, from);
+  const b = getRouterDetails(lab, to);
+  if (!a || !b) return "eBGP";
+
+  const aLoopback = hostAddress(a.loopback);
+  const bLoopback = hostAddress(b.loopback);
+  if (a.routeReflectorClients?.includes(bLoopback) || b.routeReflectorClients?.includes(aLoopback)) {
+    return "RR-client";
+  }
+  if (a.asn && b.asn && a.asn === b.asn) return "iBGP";
+  if (a.confederationId && a.confederationId === b.confederationId) return "Confed";
+  return "eBGP";
+}
+
 // ─── TopologyDiagram ─────────────────────────────────────────────────────────
 export function TopologyDiagram({ lab, sessionStatus = "default", compact = false }) {
   const [hovered, setHovered] = useState(null);
@@ -78,9 +99,15 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
   const links = (lab.links || []).map((l) => {
     // links format: ["R1","eth1","R2","eth1"] or {from, to, type}
     if (Array.isArray(l)) {
-      return { from: l[0], to: l[2], iface_a: l[1], iface_b: l[3], type: "eBGP" };
+      return {
+        from: l[0],
+        to: l[2],
+        iface_a: l[1],
+        iface_b: l[3],
+        type: inferLinkType(lab, l[0], l[2]),
+      };
     }
-    return l;
+    return { ...l, type: inferLinkType(lab, l.from, l.to, l.type) };
   });
 
   const nodeMap = Object.fromEntries(positioned.map((n) => [n.id, n]));

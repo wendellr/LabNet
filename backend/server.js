@@ -517,16 +517,21 @@ function summarizeTopology(lab) {
 
     const asMatch = conf.match(/router bgp\s+(\d+)/);
     const routerIdMatch = conf.match(/bgp router-id\s+(\S+)/);
+    const confederationMatch = conf.match(/bgp confederation identifier\s+(\d+)/);
     const neighbors = [...conf.matchAll(/neighbor\s+(\S+)\s+remote-as\s+(\d+)/g)]
       .map(([, ip, remoteAs]) => ({ ip, remoteAs }));
+    const routeReflectorClients = [...conf.matchAll(/neighbor\s+(\S+)\s+route-reflector-client/g)]
+      .map(([, ip]) => ip);
     const loopback = interfaces.lo?.addresses?.[0] || '';
 
     routers[router] = {
       asn: asMatch?.[1] || null,
       routerId: routerIdMatch?.[1] || null,
+      confederationId: confederationMatch?.[1] || null,
       loopback,
       interfaces: Object.values(interfaces),
       neighbors,
+      routeReflectorClients,
     };
   }
 
