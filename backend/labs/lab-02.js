@@ -103,7 +103,7 @@ const lab = {
     },
     "q3": {
       "type": "radio",
-      "correct": "O caminho via R2, porque recebeu Local Preference 200 propagado via iBGP de R1",
+      "correct": "R1 deve preferir o caminho via R2 para 30.30.0.0/24, porque recebeu Local Preference 200 propagado por iBGP",
       "points": 20
     },
     "q4": {
@@ -208,10 +208,10 @@ const lab = {
   ],
   "challenge": {
     "title": "Desafio: Política de Saída Assimétrica",
-    "description": "Garanta que o AS1 use Local Preference para preferir a saida desejada para rotas externas, sem usar Weight ou AS-Path Prepend.\n\nRequisitos:\n1. A politica deve ser aplicada inbound no roteador que recebe as rotas externas.\n2. O valor usado deve ser maior que o padrao.\n3. A verificacao deve mostrar Local Preference 200 na tabela BGP.\n4. Use soft reset inbound para reaplicar a politica sem derrubar sessoes.",
+    "description": "Objetivo: faça o AS1 preferir a saída por R2 quando o destino estiver no AS2.\n\nNa topologia deste lab:\n- R1 e R2 pertencem ao AS1 e formam iBGP.\n- R1 tem eBGP com R3/AS3.\n- R2 tem eBGP com R4/AS2.\n- A rede 30.30.0.0/24 é originada pelo R4/AS2.\n\nTarefa prática:\n1. Em R2, crie uma route-map que aplique Local Preference 200.\n2. Aplique essa route-map inbound no vizinho eBGP 30.0.0.1.\n3. Execute clear bgp * soft in para reaplicar a política sem derrubar sessões.\n4. Verifique em R2 e R1 com show ip bgp.\n\nResultado esperado: R2 marca as rotas recebidas do AS2 com Local Preference 200, e R1 enxerga esse atributo via iBGP para a rota 30.30.0.0/24.",
     "hints": [
       "Local Preference é propagado pelo iBGP dentro do AS",
-      "Configure route-maps diferentes para cada vizinho eBGP",
+      "A política deve ser inbound no roteador que recebe a rota externa",
       "Maior Local Preference = preferido"
     ],
     "questions": [
@@ -221,8 +221,8 @@ const lab = {
         "text": "Qual o valor padrão de Local Preference no BGP?",
         "options": [
           "0",
-          "100",
           "200",
+          "100",
           "1000"
         ]
       },
@@ -232,19 +232,19 @@ const lab = {
         "text": "Por que o Local Preference é eficaz para controlar o tráfego de SAÍDA do AS?",
         "options": [
           "Porque é propagado via eBGP para todos os ASes vizinhos",
-          "Porque é propagado apenas via iBGP dentro do AS, influenciando qual saída todos os roteadores internos preferem",
           "Porque tem maior prioridade que o Weight na ordem de decisão BGP",
-          "Porque substitui o AS-PATH na seleção de melhor caminho"
+          "Porque substitui o AS-PATH na seleção de melhor caminho",
+          "Porque é propagado apenas via iBGP dentro do AS, influenciando qual saída todos os roteadores internos preferem"
         ]
       },
       {
         "id": "q3",
         "type": "radio",
-        "text": "Você configurou Local Preference 200 no R1 para rotas recebidas de R2. O que R3 (iBGP peer de R1) vai preferir?",
+        "text": "Depois de aplicar Local Preference 200 em R2 para rotas recebidas do AS2, o que R1 deve preferir para chegar em 30.30.0.0/24?",
         "options": [
-          "O caminho via R4, porque R4 tem Local Preference padrão (100)",
-          "O caminho via R2, porque recebeu Local Preference 200 propagado via iBGP de R1",
+          "R1 deve preferir o caminho via R2 para 30.30.0.0/24, porque recebeu Local Preference 200 propagado por iBGP",
           "Nenhum caminho — Local Preference não é propagado para iBGP peers",
+          "R1 deve preferir R3, porque eBGP sempre vence iBGP",
           "Depende do AS-PATH, que tem prioridade sobre Local Preference"
         ]
       },
@@ -254,8 +254,8 @@ const lab = {
         "text": "Qual a diferença entre Local Preference e Weight para influenciar seleção de rota?",
         "options": [
           "Weight é propagado via iBGP; Local Preference é local ao roteador",
-          "Local Preference é propagado via iBGP dentro do AS; Weight é local apenas ao roteador onde foi configurado",
           "Ambos têm o mesmo escopo — afetam apenas o roteador local",
+          "Local Preference é propagado via iBGP dentro do AS; Weight é local apenas ao roteador onde foi configurado",
           "Local Preference é usado em eBGP; Weight é usado em iBGP"
         ]
       },
@@ -264,20 +264,20 @@ const lab = {
         "type": "radio",
         "text": "Na ordem de decisão BGP, qual atributo tem MAIOR prioridade?",
         "options": [
+          "Weight",
           "Local Preference",
           "AS-PATH",
-          "Weight",
           "MED"
         ]
       },
       {
         "id": "q6",
         "type": "radio",
-        "text": "Após configurar Local Preference 200 via route-map no R1, qual comando aplica a política sem derrubar sessões?",
+        "text": "Após configurar Local Preference 200 via route-map no R2, qual comando aplica a política sem derrubar sessões?",
         "options": [
           "clear bgp * hard",
-          "clear bgp * soft in",
           "clear bgp * soft out",
+          "clear bgp * soft in",
           "reload bgp"
         ]
       }
