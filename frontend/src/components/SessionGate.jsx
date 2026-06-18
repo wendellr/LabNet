@@ -25,6 +25,8 @@ export function SessionGate({ onSession, onTeacher }) {
   const availableLabs = apiLabs?.length
     ? apiLabs
     : LABS_META.filter((l) => AVAILABLE_LAB_IDS.includes(l.id));
+  const selectedLab = availableLabs.find((lab) => lab.id === labId) || availableLabs[0];
+  const selectedStyle = DIFF_STYLE[selectedLab?.difficulty] || DIFF_STYLE.Iniciante;
 
   const startLab = async () => {
     if (!name.trim()) return setError("Digite seu nome");
@@ -61,12 +63,24 @@ export function SessionGate({ onSession, onTeacher }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "#020817", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", padding: 16 }}>
-      <style>{`@keyframes fadeUp { from { opacity:0; transform:translateY(16px);} to { opacity:1; transform:translateY(0);} } .gate-card { animation: fadeUp .35s ease; }`}</style>
-      <div style={{ width: "100%", maxWidth: 500 }} className="gate-card">
+      <style>{`
+        @keyframes fadeUp { from { opacity:0; transform:translateY(16px);} to { opacity:1; transform:translateY(0);} }
+        .gate-card { animation: fadeUp .35s ease; }
+        .student-grid { display:grid; grid-template-columns: minmax(260px, .82fr) minmax(320px, 1.18fr); gap:16px; align-items:start; }
+        .lab-picker-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:8px; }
+        @media (max-width: 760px) {
+          .student-grid { grid-template-columns: 1fr; }
+          .lab-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 420px) {
+          .lab-picker-grid { grid-template-columns: 1fr; }
+        }
+      `}</style>
+      <div style={{ width: "100%", maxWidth: showTeacher ? 500 : 860 }} className="gate-card">
 
         {/* Logo block */}
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontSize: 52, marginBottom: 12 }}>🌐</div>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontSize: 42, marginBottom: 8 }}>🌐</div>
           <h1 style={{ margin: 0, fontSize: 30, fontWeight: 900, color: "#00d4ff", letterSpacing: 3, textTransform: "uppercase" }}>BGP Lab</h1>
           <p style={{ color: "#475569", margin: "6px 0 0", fontSize: 12, letterSpacing: 1 }}>ContainerLab · FRR · Laboratório Prático de BGP</p>
           <div style={{ marginTop: 14, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
@@ -79,71 +93,96 @@ export function SessionGate({ onSession, onTeacher }) {
         {/* ── Student form ── */}
         {!showTeacher ? (
           <div style={{ background: "#0f172a", border: "1px solid #1e3a5f", borderRadius: 12, padding: 24 }}>
-            <h3 style={{ margin: "0 0 20px", color: "#e2e8f0", fontSize: 14, letterSpacing: 1 }}>Entrar no Laboratório</h3>
+            <div className="student-grid">
+              <div>
+                <h3 style={{ margin: "0 0 16px", color: "#e2e8f0", fontSize: 14, letterSpacing: 1 }}>Entrar no Laboratório</h3>
 
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>SEU NOME</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && startLab()}
-                placeholder="Ex: João Silva"
-                style={fieldStyle}
-                autoFocus
-              />
-            </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>SEU NOME</label>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && startLab()}
+                    placeholder="Ex: João Silva"
+                    style={fieldStyle}
+                    autoFocus
+                  />
+                </div>
 
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 8, letterSpacing: 1 }}>ESCOLHA O LABORATÓRIO</label>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {availableLabs.map((lab) => {
-                  const ds = DIFF_STYLE[lab.difficulty];
-                  const sel = labId === lab.id;
-                  return (
-                    <div key={lab.id} onClick={() => setLabId(lab.id)}
-                      style={{ padding: "12px 16px", background: sel ? "#0d1f3c" : "#020817", border: `1px solid ${sel ? "#0ea5e9" : "#1e293b"}`, borderRadius: 8, cursor: "pointer", transition: "all .15s" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <span style={{ color: "#60a5fa", fontSize: 11 }}>Lab {lab.id} · </span>
-                          <span style={{ color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 13 }}>{lab.title}</span>
-                        </div>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          {lab.resourceProfile && (
-                            <Badge style={{ background: "#111827", color: "#9ca3af", border: "1px solid #374151" }}>
-                              {lab.routerCount || lab.routers?.length || "?"} FRR
-                            </Badge>
-                          )}
-                          <Badge style={{ background: ds.bg, color: ds.color, border: `1px solid ${ds.border}` }}>{lab.difficulty}</Badge>
-                          <Badge style={{ background: "#0a0f1a", color: "#475569", border: "1px solid #1e293b" }}>{lab.duration}</Badge>
-                        </div>
-                      </div>
-                      <div style={{ color: "#475569", fontSize: 10, marginTop: 4 }}>{lab.topic}</div>
+                {selectedLab && (
+                  <div style={{ background: "#020817", border: "1px solid #1e3a5f", borderRadius: 8, padding: 14, marginBottom: 14 }}>
+                    <div style={{ color: "#60a5fa", fontSize: 11, marginBottom: 6 }}>LAB {selectedLab.id} SELECIONADO</div>
+                    <div style={{ color: "#e2e8f0", fontSize: 15, fontWeight: 800, lineHeight: 1.35 }}>{selectedLab.title}</div>
+                    <div style={{ color: "#64748b", fontSize: 11, lineHeight: 1.5, marginTop: 6 }}>{selectedLab.topic}</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                      <Badge style={{ background: selectedStyle.bg, color: selectedStyle.color, border: `1px solid ${selectedStyle.border}` }}>{selectedLab.difficulty}</Badge>
+                      <Badge style={{ background: "#0a0f1a", color: "#94a3b8", border: "1px solid #1e293b" }}>{selectedLab.duration}</Badge>
+                      <Badge style={{ background: "#111827", color: "#9ca3af", border: "1px solid #374151" }}>{selectedLab.routerCount || selectedLab.routers?.length || "?"} FRR</Badge>
                     </div>
-                  );
-                })}
+                  </div>
+                )}
+
+                {error && (
+                  <div style={{ color: "#f87171", fontSize: 12, marginBottom: 12, padding: "8px 12px", background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6 }}>
+                    ⚠ {error}
+                  </div>
+                )}
+
+                <button onClick={startLab} disabled={loading}
+                  style={{ width: "100%", background: loading ? "#1e293b" : "linear-gradient(135deg,#0ea5e9,#6366f1)", color: loading ? "#475569" : "#fff", border: "none", padding: "12px 0", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, fontWeight: "bold", letterSpacing: 1, transition: "all .15s" }}>
+                  {loading ? "⏳ Provisionando containers..." : "🚀 Iniciar Laboratório"}
+                </button>
+
+                <button onClick={() => { setShowTeacher(true); setError(null); }}
+                  style={{ width: "100%", marginTop: 10, background: "none", border: "1px solid #1e293b", color: "#64748b", padding: "8px 0", borderRadius: 8, cursor: "pointer", fontSize: 12 }}>
+                  👨‍🏫 Acesso do Professor
+                </button>
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                  <label style={{ color: "#94a3b8", fontSize: 10, letterSpacing: 1 }}>ESCOLHA O LABORATÓRIO</label>
+                  <span style={{ color: "#475569", fontSize: 10 }}>{availableLabs.length} disponíveis</span>
+                </div>
+                <div className="lab-picker-grid">
+                  {availableLabs.map((lab) => {
+                    const ds = DIFF_STYLE[lab.difficulty] || DIFF_STYLE.Iniciante;
+                    const sel = labId === lab.id;
+                    return (
+                      <button key={lab.id} type="button" onClick={() => setLabId(lab.id)}
+                        style={{
+                          minHeight: 96,
+                          textAlign: "left",
+                          padding: 12,
+                          background: sel ? "#0d1f3c" : "#020817",
+                          border: `1px solid ${sel ? "#0ea5e9" : "#1e293b"}`,
+                          borderRadius: 8,
+                          cursor: "pointer",
+                          transition: "all .15s",
+                          boxShadow: sel ? "0 0 0 1px rgba(14,165,233,.25)" : "none",
+                        }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                          <span style={{ color: sel ? "#67e8f9" : "#60a5fa", fontSize: 12, fontWeight: 800 }}>Lab {lab.id}</span>
+                          <span style={{ width: 9, height: 9, borderRadius: "50%", background: sel ? "#22d3ee" : "#1e293b", flexShrink: 0 }} />
+                        </div>
+                        <div style={{ color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 12, lineHeight: 1.3, fontWeight: 700, minHeight: 32 }}>
+                          {lab.title}
+                        </div>
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9 }}>
+                          <Badge style={{ background: ds.bg, color: ds.color, border: `1px solid ${ds.border}` }}>{lab.difficulty}</Badge>
+                          <Badge style={{ background: "#0a0f1a", color: "#64748b", border: "1px solid #1e293b" }}>{lab.duration}</Badge>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
                 {!apiLabs?.length && (
-                  <div style={{ padding: "10px 14px", background: "#020817", border: "1px dashed #1e293b", borderRadius: 8, opacity: 0.5 }}>
-                    <span style={{ color: "#334155", fontSize: 11 }}>Labs 3, 5–8, 10–16 — em breve...</span>
+                  <div style={{ marginTop: 10, padding: "8px 12px", background: "#020817", border: "1px dashed #1e293b", borderRadius: 8, opacity: 0.65 }}>
+                    <span style={{ color: "#475569", fontSize: 11 }}>Usando catálogo local até a API responder.</span>
                   </div>
                 )}
               </div>
             </div>
-
-            {error && (
-              <div style={{ color: "#f87171", fontSize: 12, marginBottom: 14, padding: "8px 12px", background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6 }}>
-                ⚠ {error}
-              </div>
-            )}
-
-            <button onClick={startLab} disabled={loading}
-              style={{ width: "100%", background: loading ? "#1e293b" : "linear-gradient(135deg,#0ea5e9,#6366f1)", color: loading ? "#475569" : "#fff", border: "none", padding: "12px 0", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, fontWeight: "bold", letterSpacing: 1, transition: "all .15s" }}>
-              {loading ? "⏳ Provisionando containers..." : "🚀 Iniciar Laboratório"}
-            </button>
-
-            <button onClick={() => { setShowTeacher(true); setError(null); }}
-              style={{ width: "100%", marginTop: 10, background: "none", border: "1px solid #1e293b", color: "#475569", padding: "8px 0", borderRadius: 8, cursor: "pointer", fontSize: 12 }}>
-              👨‍🏫 Acesso do Professor
-            </button>
           </div>
         ) : (
           /* ── Teacher login ── */
