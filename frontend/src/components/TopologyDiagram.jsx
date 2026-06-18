@@ -42,6 +42,20 @@ const NODE_STATUS_COLOR = {
   running: "#4ade80", provisioning: "#fbbf24", error: "#f87171", default: "#00d4ff",
 };
 
+function getRouterDetails(lab, routerId) {
+  return lab.topologyDetails?.routers?.[routerId] || null;
+}
+
+function getInterfaceAddress(lab, routerId, ifaceName) {
+  const details = getRouterDetails(lab, routerId);
+  const iface = details?.interfaces?.find((item) => item.name === ifaceName);
+  return iface?.addresses?.[0] || "";
+}
+
+function shortAddr(address) {
+  return address || "";
+}
+
 // ─── TopologyDiagram ─────────────────────────────────────────────────────────
 export function TopologyDiagram({ lab, sessionStatus = "default", compact = false }) {
   const [hovered, setHovered] = useState(null);
@@ -117,6 +131,10 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
           const dash = LINK_DASH[link.type]  || "0";
           const mid  = { x: (a.px + b.px) / 2, y: (a.py + b.py) / 2 };
           const markerId = link.type === "iBGP" ? "arr-ibgp" : "arr-ebgp";
+          const addrA = getInterfaceAddress(lab, link.from, link.iface_a);
+          const addrB = getInterfaceAddress(lab, link.to, link.iface_b);
+          const labelA = [link.iface_a, shortAddr(addrA)].filter(Boolean).join(" ");
+          const labelB = [link.iface_b, shortAddr(addrB)].filter(Boolean).join(" ");
 
           return (
             <g key={i}>
@@ -126,11 +144,17 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
                 strokeDasharray={dash} opacity="0.75"
                 markerEnd={`url(#${markerId})`}
               />
-              {/* Etiqueta de interface */}
+              {/* Etiquetas das interfaces */}
               {link.iface_a && !compact && (
                 <text x={a.px + (mid.x - a.px) * 0.28} y={a.py + (mid.y - a.py) * 0.28 - 5}
-                  fill={col} fontSize="8" opacity="0.6" textAnchor="middle" fontFamily="monospace">
-                  {link.iface_a}
+                  fill="#cbd5e1" fontSize="8" opacity="0.9" textAnchor="middle" fontFamily="monospace">
+                  {labelA}
+                </text>
+              )}
+              {link.iface_b && !compact && (
+                <text x={b.px + (mid.x - b.px) * 0.28} y={b.py + (mid.y - b.py) * 0.28 - 5}
+                  fill="#cbd5e1" fontSize="8" opacity="0.9" textAnchor="middle" fontFamily="monospace">
+                  {labelB}
                 </text>
               )}
               {/* Tipo do link no meio */}
@@ -148,12 +172,11 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
           const isHov = hovered === node.id;
           const r = compact ? 26 : 32;
 
-          // Pega config FRR para o tooltip
+          // Pega resumo de config para o tooltip
+          const details = getRouterDetails(lab, node.id);
           const frrConf = lab.frr_configs?.[node.id] || "";
           const asMatch = frrConf.match(/router bgp (\d+)/);
-          const asNum = asMatch ? asMatch[1] : "?";
-          const loMatch = frrConf.match(/ip address ([\d.]+\/32)/);
-          const loAddr = loMatch ? loMatch[1].replace("/32", "") : "";
+          const asNum = details?.asn || (asMatch ? asMatch[1] : "?");
 
           return (
             <g key={node.id}
@@ -221,25 +244,44 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
         <div style={{
           position: "absolute", top: 8, right: 8,
           background: "#0a1628", border: "1px solid #00d4ff",
-          borderRadius: 8, padding: "10px 14px", maxWidth: 220, fontSize: 11,
+          borderRadius: 8, padding: "10px 14px", width: 320, maxWidth: "calc(100% - 16px)", fontSize: 11,
           fontFamily: "monospace", zIndex: 10,
         }}>
           <div style={{ color: "#00d4ff", fontWeight: "bold", marginBottom: 6 }}>{tooltip.id}</div>
           {(() => {
+            const details = getRouterDetails(lab, tooltip.id);
             const conf = lab.frr_configs?.[tooltip.id] || "";
             const asMatch = conf.match(/router bgp (\d+)/);
+            const routerIdMatch = conf.match(/bgp router-id\s+(\S+)/);
             const loMatch = conf.match(/ip address ([\d.]+\/32)/);
             const neighs = [...conf.matchAll(/neighbor ([\d.]+) remote-as (\d+)/g)];
+            const asn = details?.asn || asMatch?.[1];
+            const routerId = details?.routerId || routerIdMatch?.[1];
+            const loopback = details?.loopback || loMatch?.[1];
+            const neighbors = details?.neighbors || neighs.map(([, ip, as]) => ({ ip, remoteAs: as }));
+            const interfaces = details?.interfaces || [];
             return (
               <>
-                {asMatch && <div style={{ color: "#94a3b8" }}>AS: <span style={{ color: "#60a5fa" }}>AS{asMatch[1]}</span></div>}
-                {loMatch && <div style={{ color: "#94a3b8" }}>Loopback: <span style={{ color: "#4ade80" }}>{loMatch[1].replace("/32", "")}</span></div>}
-                {neighs.length > 0 && (
+                {asn && <div style={{ color: "#94a3b8" }}>AS: <span style={{ color: "#60a5fa" }}>AS{asn}</span></div>}
+                {routerId && <div style={{ color: "#94a3b8" }}>Router-ID: <span style={{ color: "#fbbf24" }}>{routerId}</span></div>}
+                {loopback && <div style={{ color: "#94a3b8" }}>Loopback: <span style={{ color: "#4ade80" }}>{loopback}</span></div>}
+                {interfaces.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ color: "#64748b", fontSize: 10 }}>Interfaces:</div>
+                    {interfaces.map((iface) => (
+                      <div key={iface.name} style={{ color: "#94a3b8", display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <span style={{ color: iface.name === "lo" ? "#4ade80" : "#cbd5e1" }}>{iface.name}</span>
+                        <span>{iface.addresses?.join(", ") || "-"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {neighbors.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ color: "#64748b", fontSize: 10 }}>Vizinhos BGP:</div>
-                    {neighs.map(([, ip, as], i) => (
+                    {neighbors.map(({ ip, remoteAs }, i) => (
                       <div key={i} style={{ color: "#94a3b8" }}>
-                        {ip} → <span style={{ color: "#a78bfa" }}>AS{as}</span>
+                        {ip} → <span style={{ color: "#a78bfa" }}>AS{remoteAs}</span>
                       </div>
                     ))}
                   </div>

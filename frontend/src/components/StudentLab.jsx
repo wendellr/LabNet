@@ -686,20 +686,19 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
 
 // ─── TopologyTab ──────────────────────────────────────────────────────────────
 function TopologyTab({ labId, sessionStatus, session, sessionId }) {
-  // Importa os dados do lab do backend via API ou usa dados estáticos do frontend
   const [labData, setLabData] = useState(null);
 
   useEffect(() => {
-    // Carrega dados do lab para montar o diagrama
-    // Os dados estão disponíveis localmente via labs.js
-    import("../data/labs.js").then((m) => {
-      // Monta um objeto lab compatível com TopologyDiagram
-      // a partir dos metadados disponíveis no frontend
-      const steps = m.LAB_STEPS[labId] || [];
-      const routers = getRoutersFromSteps(steps, labId);
-      const links   = getLinksFromSteps(steps, labId);
-      setLabData({ routers, links, frr_configs: getFrrConfigs(labId) });
-    });
+    apiFetch("GET", `/labs/${labId}`)
+      .then(setLabData)
+      .catch(() => {
+        import("../data/labs.js").then((m) => {
+          const steps = m.LAB_STEPS[labId] || [];
+          const routers = getRoutersFromSteps(steps, labId);
+          const links   = getLinksFromSteps(steps, labId);
+          setLabData({ routers, links, frr_configs: getFrrConfigs(labId) });
+        });
+      });
   }, [labId]);
 
   return (
@@ -751,11 +750,15 @@ function WiresharkTab({ labId, sessionId, session }) {
   const [labData, setLabData] = useState(null);
 
   useEffect(() => {
-    import("../data/labs.js").then((m) => {
-      const steps = m.LAB_STEPS[labId] || [];
-      const routers = getRoutersFromSteps(steps, labId);
-      setLabData({ routers, frr_configs: getFrrConfigs(labId) });
-    });
+    apiFetch("GET", `/labs/${labId}`)
+      .then(setLabData)
+      .catch(() => {
+        import("../data/labs.js").then((m) => {
+          const steps = m.LAB_STEPS[labId] || [];
+          const routers = getRoutersFromSteps(steps, labId);
+          setLabData({ routers, frr_configs: getFrrConfigs(labId) });
+        });
+      });
   }, [labId]);
 
   return (

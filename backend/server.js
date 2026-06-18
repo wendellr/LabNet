@@ -494,6 +494,45 @@ function resourceProfileForLab(lab) {
   return 'pesado';
 }
 
+function summarizeTopology(lab) {
+  const routers = {};
+  for (const [router, conf] of Object.entries(lab.frr_configs || {})) {
+    const interfaces = {};
+    let currentInterface = null;
+
+    for (const rawLine of conf.split('\n')) {
+      const line = rawLine.trim();
+      const ifaceMatch = line.match(/^interface\s+(\S+)/);
+      if (ifaceMatch) {
+        currentInterface = ifaceMatch[1];
+        interfaces[currentInterface] = interfaces[currentInterface] || { name: currentInterface, addresses: [] };
+        continue;
+      }
+      if (currentInterface) {
+        const ipMatch = line.match(/^ip address\s+(\S+)/);
+        if (ipMatch) interfaces[currentInterface].addresses.push(ipMatch[1]);
+        if (line === '!') currentInterface = null;
+      }
+    }
+
+    const asMatch = conf.match(/router bgp\s+(\d+)/);
+    const routerIdMatch = conf.match(/bgp router-id\s+(\S+)/);
+    const neighbors = [...conf.matchAll(/neighbor\s+(\S+)\s+remote-as\s+(\d+)/g)]
+      .map(([, ip, remoteAs]) => ({ ip, remoteAs }));
+    const loopback = interfaces.lo?.addresses?.[0] || '';
+
+    routers[router] = {
+      asn: asMatch?.[1] || null,
+      routerId: routerIdMatch?.[1] || null,
+      loopback,
+      interfaces: Object.values(interfaces),
+      neighbors,
+    };
+  }
+
+  return { routers };
+}
+
 async function destroyLab(session) {
   if (!session.labDir) return;
   cleanupPtyProcesses(session.id);  // encerra terminais PTY ativos
@@ -1079,7 +1118,7 @@ app.get('/api/labs/:id', (req, res) => {
   if (!lab) return res.status(404).json({ error: 'Lab não encontrado' });
   // Retorna tudo exceto frr_configs (são grandes e não necessários no frontend)
   const { frr_configs, ...rest } = lab;
-  res.json(rest);
+  res.json({ ...rest, topologyDetails: summarizeTopology(lab) });
 });
 
 app.get('/api/health', (req, res) => {
