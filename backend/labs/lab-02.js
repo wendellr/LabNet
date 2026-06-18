@@ -305,6 +305,7 @@ router bgp 1
  neighbor 10.0.0.2 remote-as 1
  neighbor 10.0.0.2 update-source lo
  neighbor 20.0.0.1 remote-as 3
+ neighbor 20.0.0.1 update-source lo
  neighbor 20.0.0.1 ebgp-multihop 2
  !
  address-family ipv4 unicast
@@ -336,6 +337,7 @@ router bgp 1
  neighbor 10.0.0.1 remote-as 1
  neighbor 10.0.0.1 update-source lo
  neighbor 30.0.0.1 remote-as 2
+ neighbor 30.0.0.1 update-source lo
  neighbor 30.0.0.1 ebgp-multihop 2
  !
  address-family ipv4 unicast
@@ -362,6 +364,7 @@ router bgp 3
  bgp router-id 20.0.0.1
  no bgp ebgp-requires-policy
  neighbor 10.0.0.1 remote-as 1
+ neighbor 10.0.0.1 update-source lo
  neighbor 10.0.0.1 ebgp-multihop 2
  !
  address-family ipv4 unicast
@@ -385,6 +388,7 @@ router bgp 2
  bgp router-id 30.0.0.1
  no bgp ebgp-requires-policy
  neighbor 10.0.0.2 remote-as 1
+ neighbor 10.0.0.2 update-source lo
  neighbor 10.0.0.2 ebgp-multihop 2
  !
  address-family ipv4 unicast
