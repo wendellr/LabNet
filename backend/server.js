@@ -41,6 +41,8 @@ function envInt(name, fallback, min = 1) {
 
 const CONFIG = {
   MAX_STUDENTS: envInt('MAX_STUDENTS', 15),
+  MGMT_SUBNET_START: envInt('MGMT_SUBNET_START', 200, 1),
+  MGMT_SUBNET_POOL_SIZE: envInt('MGMT_SUBNET_POOL_SIZE', 50, 1),
   INACTIVITY_TIMEOUT_MS: 30 * 60 * 1000,   // 30 minutos
   CLEANUP_CHECK_INTERVAL_MS: 60 * 1000,     // verifica a cada 1 min
   PORT: process.env.PORT || 3000,
@@ -398,11 +400,12 @@ async function allocateMgmtSubnetOctet(sessionId) {
     used.add(octet);
   }
 
-  for (let octet = 200; octet < 200 + CONFIG.MAX_STUDENTS; octet++) {
+  const end = Math.min(255, CONFIG.MGMT_SUBNET_START + CONFIG.MGMT_SUBNET_POOL_SIZE);
+  for (let octet = CONFIG.MGMT_SUBNET_START; octet < end; octet++) {
     if (!used.has(octet)) return octet;
   }
 
-  throw new Error('Não há subnets de gerência disponíveis para novas sessões');
+  throw new Error(`Não há subnets de gerência disponíveis para novas sessões (pool 10.${CONFIG.MGMT_SUBNET_START}.0.0/24 até 10.${end - 1}.0.0/24)`);
 }
 
 async function getExistingDockerMgmtSubnetOctets() {
