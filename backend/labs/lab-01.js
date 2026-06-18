@@ -327,6 +327,14 @@ Importante: por padrão, o BGP só compara MED entre rotas recebidas do MESMO AS
 R3 recebe 150.1.1.0/24 de R2 (AS2) e de R4 (AS4) — ASes diferentes — então MED não é comparado.
 
 Antes de configurar qualquer MED, observe o estado atual:`,
+      description: `Observe os valores atuais antes de aplicar qualquer politica.
+
+O objetivo deste passo e perceber que o MED ainda nao esta influenciando a decisao. Execute os comandos e compare:
+- se aparece algum campo metric/MED;
+- qual caminho esta marcado com *>;
+- se o comportamento muda entre prefixos diferentes.
+
+Ainda nao configure nada aqui. Apenas registre o estado inicial para comparar depois.`,
       commands: [
         { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "Há algum valor de 'metric' nos caminhos? Qual é o *>?" },
         { cmd: "show ip bgp 150.2.2.0/24", router: "R3", desc: "Mesmo padrão para outro prefixo" },

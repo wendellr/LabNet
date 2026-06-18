@@ -10,6 +10,8 @@ const lab = {
   "topic": "Controle de Tráfego de Saída",
   "difficulty": "Iniciante",
   "duration": "40 min",
+  "enabled": true,
+  "resourceProfile": "leve",
   "routers": [
     "R1",
     "R2",
@@ -56,6 +58,38 @@ const lab = {
       "outputContains": "200"
     }
   ],
+  "verifications": [
+    {
+      "id": "bgp_established",
+      "label": "Sessões BGP verificadas",
+      "weight": 15,
+      "check": { "router": "R1", "cmdPattern": "show bgp summary", "outputPattern": "Established" }
+    },
+    {
+      "id": "localpref_configured",
+      "label": "Route-map com Local Preference configurada",
+      "weight": 25,
+      "check": { "router": "R2", "cmdPattern": "show running-config", "outputPattern": "set local-preference 200" }
+    },
+    {
+      "id": "localpref_applied_in",
+      "label": "Política aplicada inbound no vizinho eBGP",
+      "weight": 20,
+      "check": { "router": "R2", "cmdPattern": "show running-config", "outputPattern": "neighbor 30\\.0\\.0\\.1 route-map .* in" }
+    },
+    {
+      "id": "localpref_visible",
+      "label": "Local Preference 200 observado na tabela BGP",
+      "weight": 25,
+      "check": { "router": "R1", "cmdPattern": "show ip bgp", "outputPattern": "200" }
+    },
+    {
+      "id": "soft_reset_used",
+      "label": "Soft reset inbound usado para reaplicar a política",
+      "weight": 15,
+      "check": { "router": "R2", "cmdPattern": "clear bgp .*soft in", "outputPattern": "" }
+    }
+  ],
   "answerKey": {
     "q1": {
       "type": "radio",
@@ -92,7 +126,8 @@ const lab = {
     {
       "id": 1,
       "title": "Verificar iBGP e eBGP",
-      "description": "Verifique sessões iBGP (R1-R2 no AS1) e eBGP (R2-R3, R1-R4).",
+      "theory": "Local Preference e um atributo usado dentro de um AS para controlar por qual saida o trafego deve sair. Maior Local Preference vence. Diferente do AS-PATH Prepend, que tenta influenciar ASes externos, Local Preference e uma decisao interna: os roteadores do mesmo AS recebem esse valor via iBGP e passam a concordar sobre a melhor saida.\n\nNeste lab, R1 e R2 pertencem ao AS1 e formam iBGP. R1 tambem tem uma saida eBGP para o AS3, enquanto R2 tem uma saida eBGP para o AS2. Antes de alterar politica, veja quais rotas cada roteador aprende e qual caminho fica preferido.",
+      "description": "Verifique sessoes iBGP (R1-R2 no AS1) e eBGP (R1-AS3, R2-AS2). Observe a tabela BGP antes de configurar qualquer politica.",
       "commands": [
         {
           "cmd": "show bgp summary",
@@ -108,19 +143,25 @@ const lab = {
           "cmd": "show ip bgp",
           "router": "R1",
           "desc": "Tabela BGP R1"
+        },
+        {
+          "cmd": "show ip bgp",
+          "router": "R2",
+          "desc": "Tabela BGP R2"
         }
       ],
-      "expected": "2 sessões iBGP e 2 eBGP estabelecidas"
+      "expected": "R1 e R2 devem ter iBGP estabelecido entre si e eBGP estabelecido com seus ASes externos."
     },
     {
       "id": 2,
       "title": "Configurar Local Preference",
-      "description": "Configure R2 para definir Local Preference=200 nas rotas recebidas de AS2.",
+      "theory": "Para alterar Local Preference em rotas recebidas de um vizinho, usamos route-map na direcao de entrada (in). A route-map pode ter match opcional. Quando nao ha match, ela se aplica a todas as rotas daquele vizinho.\n\nO comando chave e \"set local-preference 200\". Como 200 e maior que o padrao 100, as rotas recebidas por esse vizinho passam a ser mais atraentes dentro do AS1.\n\nApos aplicar a route-map inbound, use \"clear bgp * soft in\" para reaplicar a politica nas rotas recebidas sem derrubar sessoes BGP.",
+      "description": "Configure R2 para definir Local Preference=200 nas rotas recebidas do AS2 pelo vizinho 30.0.0.1.\n\nExemplo em R2:\n  configure terminal\n  route-map SET_LP_AS2 permit 10\n   set local-preference 200\n  exit\n  router bgp 1\n   address-family ipv4 unicast\n    neighbor 30.0.0.1 route-map SET_LP_AS2 in\n  end\n  clear bgp * soft in\n\nDepois verifique em R1 e R2 se o valor 200 aparece nas rotas aprendidas do AS2.",
       "commands": [
         {
-          "cmd": "conf t\nroute-map SET-LP permit 10\n set local-preference 200\n!\nrouter bgp 1\n address-family ipv4\n  neighbor 30.0.0.1 route-map SET-LP in",
+          "cmd": "show running-config",
           "router": "R2",
-          "desc": "Configura LP=200"
+          "desc": "Confirme route-map e aplicação inbound"
         },
         {
           "cmd": "clear bgp * soft in",
@@ -130,15 +171,44 @@ const lab = {
         {
           "cmd": "show ip bgp",
           "router": "R1",
-          "desc": "R1 deve preferir R2 para AS2"
+          "desc": "R1 deve ver Local Preference 200 propagado via iBGP"
+        },
+        {
+          "cmd": "show ip bgp",
+          "router": "R2",
+          "desc": "R2 deve marcar as rotas recebidas de AS2 com Local Preference 200"
         }
       ],
       "expected": "R1 mostra Local Preference=200 para rotas de AS2 via R2"
+    },
+    {
+      "id": 3,
+      "title": "Comparar Local Preference com Weight",
+      "theory": "Weight e Local Preference parecem parecidos, mas tem escopos diferentes.\n\nWeight e local ao roteador onde foi configurado e nao e anunciado para nenhum vizinho. Local Preference e propagado por iBGP dentro do AS. Por isso, Local Preference e melhor para fazer todos os roteadores de um AS preferirem a mesma saida.\n\nNa ordem de decisao BGP, Weight vem antes de Local Preference. Mas, por ser local, Weight nao resolve sozinho uma politica de saida para todo o AS.",
+      "description": "Compare a tabela BGP de R1 e R2 depois da politica. O objetivo e perceber que o atributo configurado em R2 influencia a decisao de R1 porque foi carregado pelo iBGP.",
+      "commands": [
+        {
+          "cmd": "show ip bgp",
+          "router": "R1",
+          "desc": "Observe Local Preference recebido via iBGP"
+        },
+        {
+          "cmd": "show ip bgp",
+          "router": "R2",
+          "desc": "Compare com a tabela local de R2"
+        },
+        {
+          "cmd": "show running-config",
+          "router": "R2",
+          "desc": "Releia a policy aplicada inbound"
+        }
+      ],
+      "expected": "A politica de Local Preference deve ser visivel dentro do AS1, enquanto Weight seria apenas local ao roteador configurado."
     }
   ],
   "challenge": {
     "title": "Desafio: Política de Saída Assimétrica",
-    "description": "Configure AS1 para que tráfego para AS2 saia pelo R1 e para AS3 saia pelo R2, usando apenas Local Preference.",
+    "description": "Garanta que o AS1 use Local Preference para preferir a saida desejada para rotas externas, sem usar Weight ou AS-Path Prepend.\n\nRequisitos:\n1. A politica deve ser aplicada inbound no roteador que recebe as rotas externas.\n2. O valor usado deve ser maior que o padrao.\n3. A verificacao deve mostrar Local Preference 200 na tabela BGP.\n4. Use soft reset inbound para reaplicar a politica sem derrubar sessoes.",
     "hints": [
       "Local Preference é propagado pelo iBGP dentro do AS",
       "Configure route-maps diferentes para cada vizinho eBGP",
