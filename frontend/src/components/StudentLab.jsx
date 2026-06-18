@@ -393,10 +393,17 @@ function ChallengeTab({ labId, sessionId, onSubmitDone }) {
               </h4>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {result.verResults.map((v) => (
-                  <div key={v.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 10px", background: v.passed ? "#052e16" : "#1a0a0a", borderRadius: 6, border: `1px solid ${v.passed ? "#166534" : "#3d0000"}` }}>
-                    <span style={{ fontSize: 14, flexShrink: 0 }}>{v.passed ? "✅" : "❌"}</span>
-                    <span style={{ flex: 1, color: v.passed ? "#4ade80" : "#f87171", fontSize: 12 }}>{v.label}</span>
-                    <span style={{ color: "#475569", fontSize: 10, flexShrink: 0 }}>{v.weight}pts</span>
+                  <div key={v.id} style={{ padding: "7px 10px", background: v.passed ? "#052e16" : "#1a0a0a", borderRadius: 6, border: `1px solid ${v.passed ? "#166534" : "#3d0000"}` }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <span style={{ fontSize: 14, flexShrink: 0 }}>{v.passed ? "✅" : "❌"}</span>
+                      <span style={{ flex: 1, color: v.passed ? "#4ade80" : "#f87171", fontSize: 12 }}>{v.label}</span>
+                      <span style={{ color: "#475569", fontSize: 10, flexShrink: 0 }}>{v.weight}pts</span>
+                    </div>
+                    {v.detail && (
+                      <pre style={{ margin: "6px 0 0 24px", color: v.passed ? "#86efac" : "#fca5a5", fontSize: 10, lineHeight: 1.45, whiteSpace: "pre-wrap", fontFamily: "monospace", borderTop: "1px solid #1e293b", paddingTop: 6 }}>
+                        {v.detail}
+                      </pre>
+                    )}
                   </div>
                 ))}
               </div>

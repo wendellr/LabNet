@@ -63,7 +63,7 @@ const lab = {
       "id": "bgp_established",
       "label": "Sessões BGP verificadas",
       "weight": 15,
-      "check": { "router": "R1", "cmdPattern": "show bgp summary", "outputPattern": "Established" }
+      "check": { "router": "R1", "cmdPattern": "show bgp summary", "outputPattern": "Estab|Established" }
     },
     {
       "id": "localpref_configured",

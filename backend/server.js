@@ -964,15 +964,25 @@ async function runVerifications(lab, session) {
     const command = v.check.cmd || commandFromPattern(cmdPattern);
     let found = false;
     let detail = '';
+    const attempts = [];
 
     for (const targetRouter of routersForVerification(router, session)) {
       const { output, error } = await runVerificationCommand(session, targetRouter, command);
+      const excerpt = (output || error?.message || '')
+        .replace(/\x1b\[[0-9;]*m/g, '')
+        .trim()
+        .slice(0, 800);
+      attempts.push(`${targetRouter}# ${command}\n${excerpt || '(sem saída)'}`);
       if (regex.test(output || '')) {
         found = true;
         detail = `${targetRouter}# ${command}`;
         break;
       }
-      if (error && !detail) detail = error;
+    }
+
+    if (!found) {
+      detail = `Esperado: /${outputPattern}/i\n${attempts.join('\n\n---\n')}`;
+      console.log(`[verify] ${session.id} ${v.id} falhou: ${detail.slice(0, 1000)}`);
     }
 
     results.push({
