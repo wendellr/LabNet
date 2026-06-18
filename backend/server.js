@@ -1086,6 +1086,13 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, sessions: sessions.size, ts: Date.now() });
 });
 
+app.get('/api/config/public', (req, res) => {
+  res.json({
+    maxStudents: CONFIG.MAX_STUDENTS,
+    inactivityTimeoutMinutes: Math.round(CONFIG.INACTIVITY_TIMEOUT_MS / 60000),
+  });
+});
+
 // ─── Configuração de email (professor define em runtime) ─────────────────────
 let runtimeConfig = {
   teacherEmail: process.env.TEACHER_EMAIL || '',

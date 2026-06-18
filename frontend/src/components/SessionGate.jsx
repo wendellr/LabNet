@@ -11,6 +11,7 @@ export function SessionGate({ onSession, onTeacher }) {
   const [teacherPw, setTeacherPw] = useState("");
   const [showTeacher, setShowTeacher] = useState(false);
   const [apiLabs, setApiLabs] = useState(null);
+  const [publicConfig, setPublicConfig] = useState(null);
 
   useEffect(() => {
     apiFetch("GET", "/labs")
@@ -19,6 +20,10 @@ export function SessionGate({ onSession, onTeacher }) {
         if (labs.length && !labs.some((lab) => lab.id === labId))
           setLabId(labs[0].id);
       })
+      .catch(() => {});
+
+    apiFetch("GET", "/config/public")
+      .then(setPublicConfig)
       .catch(() => {});
   }, []);
 
@@ -84,7 +89,9 @@ export function SessionGate({ onSession, onTeacher }) {
           <h1 style={{ margin: 0, fontSize: 30, fontWeight: 900, color: "#00d4ff", letterSpacing: 3, textTransform: "uppercase" }}>BGP Lab</h1>
           <p style={{ color: "#475569", margin: "6px 0 0", fontSize: 12, letterSpacing: 1 }}>ContainerLab · FRR · Laboratório Prático de BGP</p>
           <div style={{ marginTop: 14, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-            <Badge style={{ background: "#052e16", color: "#4ade80", border: "1px solid #166534" }}>⚡ Até 15 alunos simultâneos</Badge>
+            <Badge style={{ background: "#052e16", color: "#4ade80", border: "1px solid #166534" }}>
+              ⚡ {publicConfig?.maxStudents ? `Até ${publicConfig.maxStudents} alunos simultâneos` : "Capacidade configurada no servidor"}
+            </Badge>
             <Badge style={{ background: "#0d1f3c", color: "#60a5fa", border: "1px solid #1e3a5f" }}>⏱ Auto-cleanup 30 min</Badge>
             <Badge style={{ background: "#2d1b00", color: "#fb923c", border: "1px solid #92400e" }}>🔬 Wireshark/tshark</Badge>
           </div>
