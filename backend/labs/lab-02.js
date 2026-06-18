@@ -84,10 +84,10 @@ const lab = {
       "check": { "router": "R2", "cmdPattern": "show ip bgp", "outputPattern": "250" }
     },
     {
-      "id": "soft_reset_used",
-      "label": "Soft reset inbound usado para reaplicar a política",
+      "id": "r1_prefix_verified",
+      "label": "R1 marcou a rota 20.20.0.0/24 com Local Preference 250",
       "weight": 15,
-      "check": { "router": "R1", "cmdPattern": "clear bgp .*soft in", "outputPattern": "" }
+      "check": { "router": "R1", "cmdPattern": "show ip bgp 20\\.20\\.0\\.0", "outputPattern": "250" }
     }
   ],
   "answerKey": {

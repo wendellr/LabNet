@@ -729,7 +729,7 @@ function autoEvaluateProgress(session, router, command, output) {
 }
 
 // Submit de respostas do desafio
-app.post('/api/session/:id/submit', (req, res) => {
+app.post('/api/session/:id/submit', async (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
 
@@ -737,9 +737,9 @@ app.post('/api/session/:id/submit', (req, res) => {
   session.challengeAnswers = answers;
   session.lastActivity = Date.now();
 
-  // Avaliação real: verifica comandos executados + respostas
+  // Avaliação real: verifica estado atual dos roteadores + respostas
   const { score, verResults, answerResults, feedback } =
-    evaluateAnswers(session.labId, answers, session.progress, session.commandHistory);
+    await evaluateAnswers(session, answers);
 
   session.score = score;
   session.evalDetail = { verResults, answerResults };
@@ -916,39 +916,82 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
 // ─── Motor de Avaliação ────────────────────────────────────────────────────────
 // Avalia comandos executados + respostas do desafio
 
-function runVerifications(lab, commandHistory) {
-  // Executa cada verificação contra o historial real de comandos
+function commandFromPattern(pattern) {
+  const alternatives = String(pattern || '').split('|').map(s => s.trim()).filter(Boolean);
+  const preferred = alternatives.find(s => !/[\\()[\]{}+?^$]/.test(s)) || alternatives[0] || '';
+  return preferred
+    .replace(/\.\*.*/, '')
+    .replace(/\\\./g, '.')
+    .replace(/\\\*/g, '*')
+    .trim();
+}
+
+function routersForVerification(checkRouter, session) {
+  if (checkRouter !== 'any') return [checkRouter];
+  return (session.containers || [])
+    .map(name => name.split('-').pop()?.toUpperCase())
+    .filter(Boolean);
+}
+
+async function runVerificationCommand(session, router, command) {
+  const containerName = `clab-${session.id}-${router}`;
+  if (!session.containers.includes(containerName)) {
+    return { output: '', error: `Container ${containerName} não encontrado` };
+  }
+
+  const fullCmd = `sudo docker exec ${containerName} vtysh -c "${command.replace(/"/g, '\\"')}"`;
+  const { stdout, stderr, error } = await runCommand(fullCmd, '/', session);
+  const output = stdout || stderr || (error ? error.message : '');
+
+  session.commandHistory.push({
+    ts: Date.now(),
+    router,
+    command,
+    output: output.slice(0, 4096),
+    source: 'verification',
+  });
+  if (session.commandHistory.length > 500) session.commandHistory.splice(0, 100);
+
+  return { output, error };
+}
+
+async function runVerifications(lab, session) {
+  // Executa cada verificação contra o estado atual dos roteadores.
   const results = [];
   for (const v of (lab.verifications || [])) {
     const { router, cmdPattern, outputPattern } = v.check;
     const regex = new RegExp(outputPattern, 'i');
-    const cmdRe = new RegExp(cmdPattern, 'i');
+    const command = v.check.cmd || commandFromPattern(cmdPattern);
+    let found = false;
+    let detail = '';
 
-    // Procura no histórico: algum comando que bate com cmdPattern
-    // executado no roteador certo (ou "any"), cujo output bate com outputPattern
-    const found = commandHistory.some(entry => {
-      if (router !== 'any' && entry.router !== router) return false;
-      if (!cmdRe.test(entry.command)) return false;
-      if (!regex.test(entry.output || '')) return false;
-      return true;
-    });
+    for (const targetRouter of routersForVerification(router, session)) {
+      const { output, error } = await runVerificationCommand(session, targetRouter, command);
+      if (regex.test(output || '')) {
+        found = true;
+        detail = `${targetRouter}# ${command}`;
+        break;
+      }
+      if (error && !detail) detail = error;
+    }
 
     results.push({
       id:     v.id,
       label:  v.label,
       weight: v.weight,
       passed: found,
+      detail,
     });
   }
   return results;
 }
 
-function evaluateAnswers(labId, answers, progress, commandHistory = []) {
-  const lab = LABS[labId];
+async function evaluateAnswers(session, answers) {
+  const lab = LABS[session.labId];
   if (!lab) return { score: 0, verResults: [], answerResults: [], feedback: '' };
 
   // ── 1. Verificações técnicas (comandos e outputs) ──────────────────────────
-  const verResults = runVerifications(lab, commandHistory);
+  const verResults = await runVerifications(lab, session);
   const verTotal   = verResults.reduce((s, v) => s + v.weight, 0);
   const verPts     = verResults.filter(v => v.passed).reduce((s, v) => s + v.weight, 0);
 
