@@ -10,7 +10,7 @@ const PROTOCOL_FILTERS = [
   { key: "bgp+ospf", label: "BGP + OSPF" },
 ];
 
-export function SessionGate({ onSession, onTeacher }) {
+export function SessionGate({ onSession, onTeacher, resumable, onResume, onForgetResumable, onResumeByLookup }) {
   const [name, setName]           = useState("");
   const [matricula, setMatricula] = useState("");
   const [labId, setLabId]         = useState(1);
@@ -24,6 +24,35 @@ export function SessionGate({ onSession, onTeacher }) {
   const [previewLab, setPreviewLab] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showLookup, setShowLookup] = useState(false);
+  const [lookupName, setLookupName] = useState("");
+  const [lookupMatricula, setLookupMatricula] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState(null);
+  const [lookupMatches, setLookupMatches] = useState(null);
+
+  const runLookup = async () => {
+    if (!lookupName.trim() && !lookupMatricula.trim()) return setLookupError("Digite seu nome e/ou matrícula");
+    setLookupLoading(true);
+    setLookupError(null);
+    setLookupMatches(null);
+    try {
+      const params = new URLSearchParams();
+      if (lookupName.trim()) params.set("name", lookupName.trim());
+      if (lookupMatricula.trim()) params.set("matricula", lookupMatricula.trim());
+      const data = await apiFetch("GET", `/session/lookup?${params.toString()}`);
+      if (data.matches.length === 1) {
+        const m = data.matches[0];
+        onResumeByLookup(m.sessionId, m.studentName, m.labId);
+      } else {
+        setLookupMatches(data.matches);
+      }
+    } catch (e) {
+      setLookupError(e.status === 404 ? "Nenhuma sessão ativa encontrada com esses dados" : e.message);
+    } finally {
+      setLookupLoading(false);
+    }
+  };
 
   const openPreview = async (id) => {
     setPreviewLoading(true);
@@ -166,6 +195,24 @@ export function SessionGate({ onSession, onTeacher }) {
           )}
         </div>
 
+        {/* ── Banner de sessão retomável ── */}
+        {resumable && !showTeacher && (
+          <div style={{ background: "#0d1f3c", border: "1px solid #0ea5e9", borderRadius: 10, padding: "12px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 18 }}>📎</span>
+            <span style={{ color: "#e2e8f0", fontSize: 12, flex: 1, minWidth: 200 }}>
+              Você tem uma sessão em andamento — <strong>Lab {resumable.labId}</strong>. Ela continua rodando mesmo com você aqui.
+            </span>
+            <button onClick={onResume}
+              style={{ background: "linear-gradient(135deg,#0ea5e9,#6366f1)", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: "bold" }}>
+              Voltar para o lab
+            </button>
+            <button onClick={onForgetResumable}
+              style={{ background: "none", border: "1px solid #1e3a5f", color: "#64748b", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+              Esquecer
+            </button>
+          </div>
+        )}
+
         {/* ── Student form ── */}
         {!showTeacher ? (
           <div style={{ background: "#0f172a", border: "1px solid #1e3a5f", borderRadius: 12, padding: 24 }}>
@@ -228,6 +275,38 @@ export function SessionGate({ onSession, onTeacher }) {
                   style={{ width: "100%", marginTop: 10, background: "none", border: "1px solid #1e293b", color: "#64748b", padding: "8px 0", borderRadius: 8, cursor: "pointer", fontSize: 12 }}>
                   👨‍🏫 Acesso do Professor
                 </button>
+
+                {!resumable && (
+                  <button type="button" onClick={() => { setShowLookup((v) => !v); setLookupError(null); setLookupMatches(null); }}
+                    style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: "#0ea5e9", cursor: "pointer", fontSize: 11 }}>
+                    {showLookup ? "▲ Ocultar" : "🔎 Já tinha uma sessão? Reconectar"}
+                  </button>
+                )}
+
+                {showLookup && (
+                  <div style={{ marginTop: 8, background: "#020817", border: "1px solid #1e3a5f", borderRadius: 8, padding: 12 }}>
+                    <input value={lookupName} onChange={(e) => setLookupName(e.target.value)}
+                      placeholder="Seu nome" style={{ ...fieldStyle, marginBottom: 8, padding: "7px 10px", fontSize: 12 }} />
+                    <input value={lookupMatricula} onChange={(e) => setLookupMatricula(e.target.value)}
+                      placeholder="Matrícula (opcional)" style={{ ...fieldStyle, marginBottom: 8, padding: "7px 10px", fontSize: 12 }} />
+                    {lookupError && <div style={{ color: "#f87171", fontSize: 11, marginBottom: 8 }}>⚠ {lookupError}</div>}
+                    {lookupMatches?.length > 1 && (
+                      <div style={{ marginBottom: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ color: "#94a3b8", fontSize: 11, marginBottom: 2 }}>Mais de uma sessão encontrada — escolha a sua:</div>
+                        {lookupMatches.map((m) => (
+                          <button key={m.sessionId} type="button" onClick={() => onResumeByLookup(m.sessionId, m.studentName, m.labId)}
+                            style={{ textAlign: "left", background: "#0a0f1a", border: "1px solid #1e293b", color: "#e2e8f0", padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+                            {m.studentName} {m.matricula && `(${m.matricula})`} — Lab {m.labId}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button onClick={runLookup} disabled={lookupLoading}
+                      style={{ width: "100%", background: lookupLoading ? "#1e293b" : "#0d1f3c", border: "1px solid #1e3a5f", color: "#60a5fa", padding: "7px 0", borderRadius: 6, cursor: lookupLoading ? "not-allowed" : "pointer", fontSize: 12 }}>
+                      {lookupLoading ? "Buscando..." : "Buscar minha sessão"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>

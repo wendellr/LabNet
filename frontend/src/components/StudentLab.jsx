@@ -530,7 +530,7 @@ function PcapTab({ onRunCmd }) {
 }
 
 // ─── StudentLab (main) ────────────────────────────────────────────────────
-export function StudentLab({ sessionId, studentName, labId, onExit }) {
+export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
   const [activeTab, setActiveTab] = useState("roteiro");
   const [provisionStatus, setProvisionStatus] = useState("provisioning");
   const [provisionMsg, setProvisionMsg]       = useState("Iniciando containers...");
@@ -642,7 +642,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
 
       {/* Top bar */}
       <div style={{ background: "#0f172a", borderBottom: "1px solid #1e3a5f", padding: "10px 20px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        <button onClick={onExit} style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>←</button>
+        <button onClick={onBack || onExit} title="Voltar — sua sessão continua rodando, você pode retomar pelo Gate" style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>←</button>
         <Badge style={{ background: "#0d1f3c", color: "#60a5fa", border: "1px solid #1e3a5f" }}>Lab {labId}</Badge>
         <span style={{ color: "#e2e8f0", fontWeight: "bold", fontSize: 13 }}>{labMeta?.title}</span>
         <Badge style={{ background: "#052e16", color: "#4ade80", border: "1px solid #166534" }}>● Live</Badge>

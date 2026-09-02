@@ -749,6 +749,29 @@ app.post('/api/session', async (req, res) => {
   res.json({ sessionId: session.id, status: 'provisioning' });
 });
 
+// Reconexão: acha uma sessão ativa do aluno por nome e/ou matrícula, para
+// quando ele perdeu o localStorage (outro navegador/dispositivo, cache
+// limpo). Precisa vir ANTES de '/api/session/:id' na ordem de rotas, senão
+// o Express trataria "lookup" como um :id.
+app.get('/api/session/lookup', (req, res) => {
+  const name = String(req.query.name || '').trim().toLowerCase();
+  const matricula = String(req.query.matricula || '').trim().toLowerCase();
+  if (!name && !matricula) return res.status(400).json({ error: 'Informe nome e/ou matrícula' });
+
+  const matches = [...sessions.values()].filter(s => {
+    if (!['provisioning', 'running', 'idle'].includes(s.status)) return false;
+    const nameMatches = name && s.studentName.toLowerCase().includes(name);
+    const matriculaMatches = matricula && (s.matricula || '').toLowerCase() === matricula;
+    if (name && matricula) return nameMatches || matriculaMatches;
+    return name ? nameMatches : matriculaMatches;
+  });
+
+  if (matches.length === 0) return res.status(404).json({ error: 'Nenhuma sessão ativa encontrada' });
+  res.json({
+    matches: matches.map(s => ({ sessionId: s.id, labId: s.labId, studentName: s.studentName, matricula: s.matricula || '' })),
+  });
+});
+
 // Status de uma sessão
 app.get('/api/session/:id', (req, res) => {
   const s = sessions.get(req.params.id);
@@ -835,6 +858,35 @@ function autoEvaluateProgress(session, router, command, output) {
 }
 
 // Submit de respostas do desafio
+// ─── Histórico de notas (persistente, sobrevive a restart) ────────────────────
+// Arquivo JSON Lines fora do repositório git (dentro de LAB_BASE_DIR, o mesmo
+// diretório já usado pelas sessões do Containerlab) — uma linha por tentativa
+// de envio, log append-only. Volume esperado (uma turma, um semestre) é
+// pequeno o bastante para não precisar de um banco de dados de verdade.
+const GRADES_LOG_PATH = path.join(CONFIG.LAB_BASE_DIR, 'grades.jsonl');
+
+async function appendGradeRecord(record) {
+  try {
+    await fs.mkdir(CONFIG.LAB_BASE_DIR, { recursive: true });
+    await fs.appendFile(GRADES_LOG_PATH, JSON.stringify(record) + '\n');
+  } catch (e) {
+    console.error('[grades] Falha ao gravar registro:', e.message);
+  }
+}
+
+async function readGradeRecords() {
+  try {
+    const raw = await fs.readFile(GRADES_LOG_PATH, 'utf8');
+    return raw.split('\n').filter(Boolean).map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    }).filter(Boolean);
+  } catch (e) {
+    if (e.code === 'ENOENT') return [];
+    console.error('[grades] Falha ao ler registros:', e.message);
+    return [];
+  }
+}
+
 app.post('/api/session/:id/submit', async (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
@@ -852,6 +904,21 @@ app.post('/api/session/:id/submit', async (req, res) => {
 
   logEvent('submit', { sessionId: session.id, student: session.studentName, score });
   broadcastDashboard();
+
+  // Grava no histórico persistente de notas (sobrevive a restart do backend)
+  const submittedLab = session.materializedLab || LABS[session.labId];
+  appendGradeRecord({
+    ts: Date.now(),
+    sessionId: session.id,
+    studentName: session.studentName,
+    matricula: session.matricula || '',
+    labId: session.labId,
+    labTitle: submittedLab?.title || `Lab ${session.labId}`,
+    score,
+    verPassed: verResults.filter(v => v.passed).length,
+    verTotal: verResults.length,
+    durationMin: session.createdAt ? Math.round((Date.now() - session.createdAt) / 60000) : null,
+  }).catch(() => {});
 
   // Envia resultado por email ao professor
   sendResultEmail(session, answers, score, feedback, verResults, answerResults).catch(e =>
@@ -1198,6 +1265,12 @@ app.get('/api/session/:id/history', (req, res) => {
 // Dashboard do professor — todas as sessões
 app.get('/api/admin/dashboard', (req, res) => {
   res.json(getDashboardSnapshot());
+});
+
+// Histórico completo de notas (persistente) — para o painel "Notas" do professor
+app.get('/api/admin/grades', async (req, res) => {
+  const records = await readGradeRecords();
+  res.json({ records });
 });
 
 // Forçar cleanup de uma sessão

@@ -56,10 +56,36 @@ export default function App() {
     setSessionId(sid); setStudentName(name); setLabId(lid); setMode("student");
   };
 
+  // Sessão terminou de verdade (encerrada pelo professor, expirou, erro) —
+  // limpa tudo, não há nada pra retomar.
   const handleExit = () => {
     clearSession();
     setSessionId(null); setStudentName(null); setLabId(null);
     setMode("gate");
+  };
+
+  // Botão "←" do aluno: só navega de volta pra tela principal, sem apagar a
+  // sessão — ela continua rodando no backend, e o Gate mostra um jeito de
+  // voltar pra ela.
+  const handleBackToGate = () => {
+    setMode("gate");
+  };
+
+  const resumeSession = () => {
+    setMode("student");
+  };
+
+  // "Esquecer" no banner do Gate — só para de lembrar localmente, não
+  // encerra a sessão no backend (isso continua sendo ação do professor ou
+  // do timeout de inatividade).
+  const forgetResumable = () => {
+    clearSession();
+    setSessionId(null); setStudentName(null); setLabId(null);
+  };
+
+  const handleResumeByLookup = (sid, name, lid) => {
+    saveSession(sid, name, lid);
+    setSessionId(sid); setStudentName(name); setLabId(lid); setMode("student");
   };
 
   if (mode === "loading")
@@ -76,6 +102,10 @@ export default function App() {
       <SessionGate
         onSession={handleSession}
         onTeacher={() => setMode("teacher")}
+        resumable={sessionId ? { sessionId, studentName, labId } : null}
+        onResume={resumeSession}
+        onForgetResumable={forgetResumable}
+        onResumeByLookup={handleResumeByLookup}
       />
     );
 
@@ -86,7 +116,7 @@ export default function App() {
     return (
       <StudentLab
         sessionId={sessionId} studentName={studentName}
-        labId={labId} onExit={handleExit}
+        labId={labId} onExit={handleExit} onBack={handleBackToGate}
       />
     );
 

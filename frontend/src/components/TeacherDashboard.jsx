@@ -221,6 +221,7 @@ export function TeacherDashboard({ onExit }) {
   const VIEWS = [
     { id: "overview", label: "📊 Visão Geral" },
     { id: "sessions", label: "👥 Sessões" },
+    { id: "grades",   label: "🎓 Notas" },
     { id: "events",   label: "📡 Eventos" },
     { id: "email",    label: "📧 Email" },
   ];
@@ -356,6 +357,9 @@ export function TeacherDashboard({ onExit }) {
           </div>
         )}
 
+        {/* ── Notas ── */}
+        {view === "grades" && <GradesView />}
+
         {/* ── Events ── */}
         {view === "events" && (
           <Card>
@@ -397,6 +401,101 @@ export function TeacherDashboard({ onExit }) {
 }
 
 // ─── EmailConfigView ───────────────────────────────────────────────────────
+// ─── GradesView — histórico persistente de notas, filtrável por matrícula/nome ──
+function GradesView() {
+  const [records, setRecords] = useState(null);
+  const [search, setSearch]   = useState("");
+
+  useEffect(() => {
+    apiFetch("GET", "/admin/grades").then((d) => setRecords(d.records || [])).catch(() => setRecords([]));
+  }, []);
+
+  const filtered = (records || []).filter((r) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (r.matricula || "").toLowerCase().includes(q) || (r.studentName || "").toLowerCase().includes(q);
+  }).sort((a, b) => b.ts - a.ts);
+
+  const summary = search.trim() && filtered.length > 0
+    ? { count: filtered.length, avg: Math.round(filtered.reduce((s, r) => s + (r.score || 0), 0) / filtered.length) }
+    : null;
+
+  const exportCsv = () => {
+    const header = ["Matrícula", "Aluno", "Lab", "Nota", "Data"];
+    const rows = filtered.map((r) => [
+      r.matricula || "", r.studentName || "", r.labTitle || `Lab ${r.labId}`, r.score,
+      new Date(r.ts).toLocaleString("pt-BR"),
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `labnet-notas-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 13 }}>🎓 Histórico de Notas ({filtered.length})</h3>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por matrícula ou nome..."
+            style={{ background: "#020817", border: "1px solid #1e3a5f", borderRadius: 6, color: "#e2e8f0", padding: "6px 12px", fontSize: 12, minWidth: 220 }} />
+          <button onClick={exportCsv} disabled={filtered.length === 0}
+            style={{ background: "#052e16", border: "1px solid #166534", color: "#4ade80", padding: "6px 14px", borderRadius: 6, cursor: filtered.length ? "pointer" : "not-allowed", fontSize: 12 }}>
+            ⬇ Exportar CSV
+          </button>
+        </div>
+      </div>
+
+      {summary && (
+        <div style={{ display: "flex", gap: 16, marginBottom: 14, padding: "8px 14px", background: "#0d1f3c", border: "1px solid #1e3a5f", borderRadius: 8 }}>
+          <span style={{ color: "#94a3b8", fontSize: 12 }}>Envios: <strong style={{ color: "#e2e8f0" }}>{summary.count}</strong></span>
+          <span style={{ color: "#94a3b8", fontSize: 12 }}>Média: <strong style={{ color: summary.avg >= 60 ? "#4ade80" : "#f87171" }}>{summary.avg}</strong></span>
+        </div>
+      )}
+
+      {records === null ? (
+        <div style={{ color: "#1e293b", fontSize: 12, textAlign: "center", padding: "30px 0" }}>Carregando...</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ color: "#1e293b", fontSize: 12, textAlign: "center", padding: "30px 0" }}>
+          {records.length === 0 ? "Nenhum envio registrado ainda" : "Nenhum resultado para essa busca"}
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                {["Matrícula", "Aluno", "Lab", "Nota", "Data"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "6px 10px", color: "#475569", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: 1 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #0a0f1a" }}>
+                  <td style={{ padding: "7px 10px", color: "#94a3b8" }}>{r.matricula || "—"}</td>
+                  <td style={{ padding: "7px 10px", color: "#e2e8f0" }}>{r.studentName}</td>
+                  <td style={{ padding: "7px 10px", color: "#60a5fa" }}>{r.labTitle || `Lab ${r.labId}`}</td>
+                  <td style={{ padding: "7px 10px", color: r.score >= 60 ? "#4ade80" : "#f87171", fontWeight: 700 }}>{r.score}</td>
+                  <td style={{ padding: "7px 10px", color: "#475569" }}>{new Date(r.ts).toLocaleString("pt-BR")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function EmailConfigView({ cfg, onChange, onSave, saving }) {
   return (
     <Card>
