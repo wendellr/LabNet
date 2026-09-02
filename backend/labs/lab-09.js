@@ -134,17 +134,17 @@ module.exports = {
       "check": {
         "router": "R1",
         "cmdPattern": "show running-config",
-        "outputPattern": "community-list standard \\S+ permit {{commHigh}}"
+        "outputPattern": "community-list standard \\S+ (?:seq \\d+ )?permit {{commHigh}}"
       }
     },
     {
       "id": "no_export_or_custom",
-      "label": "Community no-export ou customizada aplicada",
+      "label": "R1 vê a community no-export aplicada em 192.168.30.0/24",
       "weight": 8,
       "check": {
-        "router": "any",
-        "cmdPattern": "show ip bgp",
-        "outputPattern": "Community|no-export|\\d+:\\d+"
+        "router": "R1",
+        "cmdPattern": "show ip bgp 192\\.168\\.30\\.0",
+        "outputPattern": "no-export"
       }
     },
     {
@@ -200,7 +200,7 @@ module.exports = {
     },
     "q6": {
       "type": "radio",
-      "correct": "ip community-list standard NOME permit 1:100",
+      "correct": "bgp community-list standard NOME permit 1:100",
       "points": 12
     }
   },
@@ -347,7 +347,7 @@ module.exports = {
     {
       "id": 5,
       "title": "Configurar Community customizada e filtrar por community-list",
-      "theory": "Communities customizadas seguem o formato ASN:valor, onde você define o significado. Por exemplo, AS 1 pode definir:\n- {{commHigh}} = \"rota de alta prioridade\"\n- {{commBackup}} = \"rota de backup\"\n- 1:999 = \"não anunciar para clientes\"\n\nPara FILTRAR rotas por Community, usa-se community-list:\n\n  ip community-list standard NOME permit {{commHigh}}\n\nE depois na route-map:\n  route-map FILTRO permit 10\n   match community NOME\n   set local-preference 200\n\nIsso permite implementar políticas sofisticadas: R3 pode marcar suas rotas com communities, e R1/RR/R2 podem reagir automaticamente aplicando Local Preference, MED ou até bloqueio — sem precisar de prefix-lists em cada roteador.",
+      "theory": "Communities customizadas seguem o formato ASN:valor, onde você define o significado. Por exemplo, AS 1 pode definir:\n- {{commHigh}} = \"rota de alta prioridade\"\n- {{commBackup}} = \"rota de backup\"\n- 1:999 = \"não anunciar para clientes\"\n\nPara FILTRAR rotas por Community, usa-se community-list:\n\n  bgp community-list standard NOME permit {{commHigh}}\n\nE depois na route-map:\n  route-map FILTRO permit 10\n   match community NOME\n   set local-preference 200\n\nIsso permite implementar políticas sofisticadas: R3 pode marcar suas rotas com communities, e R1/RR/R2 podem reagir automaticamente aplicando Local Preference, MED ou até bloqueio — sem precisar de prefix-lists em cada roteador.",
       "description": "Configure uma Community customizada para influenciar a seleção de rota:\n\n1. Em R3: marque 192.168.3.0/24 com Community {{commHigh}} (alta prioridade)\n2. Em R1: crie um community-list que reconhece {{commHigh}} e aplique Local Preference 200 para essas rotas\n\nAssim, quando R2 receber 192.168.3.0/24 via RR (refletida de R1), ela chegará com Local Preference 200 — mais preferida que qualquer outra rota para o mesmo prefixo com LP padrão (100).\n\nDica: lembre de adicionar 'send-community' na sessão de R1 para R3 se ainda não estiver configurado.",
       "commands": [
         {
@@ -358,7 +358,7 @@ module.exports = {
         {
           "cmd": "show running-config",
           "router": "R1",
-          "desc": "Confirme ip community-list e route-map de entrada configurados"
+          "desc": "Confirme bgp community-list e route-map de entrada configurados"
         },
         {
           "cmd": "clear bgp * soft",
@@ -388,7 +388,7 @@ module.exports = {
     "title": "Desafio: Política Completa com Communities e Route Reflector",
     "description": "Com o Route Reflector funcionando e Communities configuradas, implemente as seguintes políticas adicionais:\n\n1. Configure R4 para marcar 192.168.40.0/24 com Community {{commBackup}} (indicando \"rota de backup\").\n   Em R2, crie um filtro que aplica Local Preference 50 para rotas com Community {{commBackup}}.\n   Verifique que R1 também recebe esta rota com LP 50 via RR.\n\n2. Configure a Community no-advertise em 192.168.30.0/24 em vez de no-export.\n   Observe a diferença: com no-advertise, a rota não chega nem a R2 via RR.\n   Depois restaure para no-export para manter o comportamento anterior.\n\n3. Adicione um segundo Route Reflector (torne o R1 também um RR) para redundância.\n   Verifique que as rotas ainda chegam corretamente usando o CLUSTER_LIST para evitar loops.",
     "hints": [
-      "Para o item 1: configure route-map em R4 com 'set community {{commBackup}}', aplique out para R2. Em R2: ip community-list + route-map in com 'set local-preference 50'",
+      "Para o item 1: configure route-map em R4 com 'set community {{commBackup}}', aplique out para R2. Em R2: bgp community-list + route-map in com 'set local-preference 50'",
       "no-advertise (65535:65282) impede propagação para QUALQUER peer — inclusive iBGP. Por isso R2 deixa de receber a rota via RR",
       "Para RR redundante: configure R1 com 'neighbor 10.0.0.3 route-reflector-client' — R1 passa a ser RR também para R2, criando redundância",
       "Com dois RRs (RR e R1), use 'bgp cluster-id' para que ambos usem o mesmo Cluster-ID, evitando que o CLUSTER_LIST cause descarte de rotas"
@@ -455,7 +455,7 @@ module.exports = {
         "text": "Qual é a sintaxe correta para criar uma community-list que reconhece a Community 1:100?",
         "options": [
           "bgp community-list 1:100 permit",
-          "ip community-list standard NOME permit 1:100",
+          "bgp community-list standard NOME permit 1:100",
           "match community 1 100 exact",
           "set community-filter AS1 value 100"
         ]
