@@ -184,7 +184,11 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
           </div>
 
           <p style={{ color: "#64748b", fontSize: 12, lineHeight: 1.7, margin: "16px auto 0", maxWidth: 620 }}>
-            O LabNet foi desenvolvido pelo <strong style={{ color: "#94a3b8" }}>Prof. Wendell Rodrigues</strong>,
+            O LabNet foi desenvolvido pelo{" "}
+            <a href="https://www.linkedin.com/in/wendelloliveirarodrigues/" target="_blank" rel="noopener noreferrer"
+              style={{ color: "#94a3b8", fontWeight: 700, textDecoration: "underline", textDecorationColor: "#334155" }}>
+              Prof. Wendell Rodrigues
+            </a>,
             do <strong style={{ color: "#94a3b8" }}>Departamento de Telemática</strong> e do{" "}
             <strong style={{ color: "#94a3b8" }}>Laboratório de Inovação Tecnológica (LIT)</strong> do IFCE,
             para o aprendizado prático dos protocolos de roteamento{" "}

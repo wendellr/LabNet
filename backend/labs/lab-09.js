@@ -45,6 +45,10 @@ module.exports = {
       "eth1"
     ]
   ],
+  "variables": {
+    "commHigh": { "pool": ["1:100", "1:150", "1:250"] },
+    "commBackup": { "pool": ["1:200", "1:280", "1:333"] }
+  },
   "frr_configs": {
     "RR": "frr version 9.0\nfrr defaults traditional\nhostname RR\nlog syslog informational\nno ipv6 forwarding\n!\ninterface lo\n ip address 10.0.0.1/32\n!\ninterface eth1\n ip address 10.1.1.1/30\n!\ninterface eth2\n ip address 10.1.2.1/30\n!\nrouter bgp 1\n bgp router-id 10.0.0.1\n bgp log-neighbor-changes\n no bgp ebgp-requires-policy\n neighbor 10.0.0.2 remote-as 1\n neighbor 10.0.0.2 update-source lo\n neighbor 10.0.0.3 remote-as 1\n neighbor 10.0.0.3 update-source lo\n !\n address-family ipv4 unicast\n  neighbor 10.0.0.2 activate\n  neighbor 10.0.0.2 next-hop-self\n  neighbor 10.0.0.3 activate\n  neighbor 10.0.0.3 next-hop-self\n exit-address-family\n!\nip route 10.0.0.2/32 10.1.1.2\nip route 10.0.0.3/32 10.1.2.2\n",
     "R1": "frr version 9.0\nfrr defaults traditional\nhostname R1\nlog syslog informational\nno ipv6 forwarding\n!\ninterface lo\n ip address 10.0.0.2/32\n!\ninterface eth1\n ip address 10.1.1.2/30\n!\ninterface eth2\n ip address 10.2.1.1/30\n!\nrouter bgp 1\n bgp router-id 10.0.0.2\n bgp log-neighbor-changes\n no bgp ebgp-requires-policy\n neighbor 10.0.0.1 remote-as 1\n neighbor 10.0.0.1 update-source lo\n neighbor 10.2.1.2 remote-as 3\n !\n address-family ipv4 unicast\n  neighbor 10.0.0.1 activate\n  neighbor 10.0.0.1 next-hop-self\n  neighbor 10.2.1.2 activate\n  neighbor 10.2.1.2 send-community\n exit-address-family\n!\nip route 10.0.0.1/32 10.1.1.1\n",
@@ -60,7 +64,7 @@ module.exports = {
       "check": {
         "router": "RR",
         "cmdPattern": "show bgp summary",
-        "outputPattern": "10\\.0\\.0\\.2.*Establ"
+        "outputPattern": "10\\.0\\.0\\.2.*\\d{2}:\\d{2}:\\d{2}\\s+\\d+"
       }
     },
     {
@@ -70,13 +74,13 @@ module.exports = {
       "check": {
         "router": "RR",
         "cmdPattern": "show bgp summary",
-        "outputPattern": "10\\.0\\.0\\.3.*Establ"
+        "outputPattern": "10\\.0\\.0\\.3.*\\d{2}:\\d{2}:\\d{2}\\s+\\d+"
       }
     },
     {
       "id": "rr_client_r1",
       "label": "R1 configurado como cliente do Route Reflector",
-      "weight": 12,
+      "weight": 10,
       "check": {
         "router": "RR",
         "cmdPattern": "show running-config",
@@ -86,7 +90,7 @@ module.exports = {
     {
       "id": "rr_client_r2",
       "label": "R2 configurado como cliente do Route Reflector",
-      "weight": 12,
+      "weight": 10,
       "check": {
         "router": "RR",
         "cmdPattern": "show bgp neighbors 10.0.0.3",
@@ -96,7 +100,7 @@ module.exports = {
     {
       "id": "r2_sees_r3_routes",
       "label": "R2 recebe rotas de R3 via Route Reflector",
-      "weight": 15,
+      "weight": 12,
       "check": {
         "router": "R2",
         "cmdPattern": "show ip bgp",
@@ -106,7 +110,7 @@ module.exports = {
     {
       "id": "r1_sees_r4_routes",
       "label": "R1 recebe rotas de R4 via Route Reflector",
-      "weight": 15,
+      "weight": 12,
       "check": {
         "router": "R1",
         "cmdPattern": "show ip bgp",
@@ -116,7 +120,7 @@ module.exports = {
     {
       "id": "community_configured",
       "label": "Community configurada em algum roteador",
-      "weight": 10,
+      "weight": 8,
       "check": {
         "router": "any",
         "cmdPattern": "show running-config",
@@ -125,55 +129,79 @@ module.exports = {
     },
     {
       "id": "community_list_filter",
-      "label": "Filtro por community-list configurado",
+      "label": "R1 filtra por community-list reconhecendo {{commHigh}}",
       "weight": 10,
       "check": {
-        "router": "any",
+        "router": "R1",
         "cmdPattern": "show running-config",
-        "outputPattern": "community-list"
+        "outputPattern": "community-list standard \\S+ permit {{commHigh}}"
       }
     },
     {
       "id": "no_export_or_custom",
       "label": "Community no-export ou customizada aplicada",
-      "weight": 10,
+      "weight": 8,
       "check": {
         "router": "any",
         "cmdPattern": "show ip bgp",
         "outputPattern": "Community|no-export|\\d+:\\d+"
       }
+    },
+    {
+      "id": "lp_override_effect",
+      "label": "R1 aplica Local Preference 200 para a rota marcada com {{commHigh}}",
+      "weight": 14,
+      "check": {
+        "router": "R1",
+        "cmdPattern": "show ip bgp 192\\.168\\.3\\.0",
+        "outputPattern": "localpref 200"
+      }
     }
   ],
   "answerKey": {
+    "predict_step1": {
+      "type": "keywords",
+      "required": ["split-horizon", "split horizon", "não repassa", "nao repassa", "ibgp"],
+      "anyOf": true,
+      "points": 10,
+      "hint": "Split-horizon do iBGP: um roteador não repassa para um peer iBGP uma rota que aprendeu de outro peer iBGP — sem Route Reflector ou full-mesh, R2 nunca recebe o que R1 aprendeu de R3."
+    },
+    "predict_step4": {
+      "type": "keywords",
+      "required": ["não", "nao", "ebgp", "export"],
+      "anyOf": true,
+      "points": 10,
+      "hint": "no-export impede o anúncio para peers eBGP — R4 é peer eBGP de R2, então R4 não deve receber essa rota mesmo que R2 a tenha aprendido via RR."
+    },
     "q1": {
       "type": "radio",
       "correct": "O Route Reflector reflete rotas entre clientes iBGP, eliminando a necessidade de full-mesh entre eles",
-      "points": 15
+      "points": 12
     },
     "q2": {
       "type": "radio",
       "correct": "Originator-ID e Cluster-List — previnem loops de reflexão",
-      "points": 20
+      "points": 16
     },
     "q3": {
       "type": "radio",
       "correct": "no-export (65535:65281) — impede que a rota seja anunciada para peers eBGP",
-      "points": 15
+      "points": 12
     },
     "q4": {
       "type": "radio",
-      "correct": "R2 não recebe a rota 192.168.30.0/24 de R3, porque o RR não a reflete para peers iBGP quando marcada com no-export",
-      "points": 20
+      "correct": "R2 recebe a rota via RR normalmente, mas não a repassa para R4, pois no-export impede o anúncio para qualquer peer eBGP",
+      "points": 16
     },
     "q5": {
       "type": "radio",
       "correct": "send-community — sem este comando o atributo Community é removido antes de enviar ao peer",
-      "points": 15
+      "points": 12
     },
     "q6": {
       "type": "radio",
       "correct": "ip community-list standard NOME permit 1:100",
-      "points": 15
+      "points": 12
     }
   },
   "steps": [
@@ -204,7 +232,11 @@ module.exports = {
           "desc": "O RR vê rotas de ambos os lados (R3 e R4)?"
         }
       ],
-      "expected": "R1 vê rotas de R3 mas NÃO as de R4. R2 vê rotas de R4 mas NÃO as de R3. O RR vê todas as rotas mas não as reflete ainda — pois R1 e R2 não estão configurados como clientes."
+      "expected": "R1 vê rotas de R3 mas NÃO as de R4. R2 vê rotas de R4 mas NÃO as de R3. O RR vê todas as rotas mas não as reflete ainda — pois R1 e R2 não estão configurados como clientes.",
+      "predict": {
+        "id": "predict_step1",
+        "prompt": "Antes de rodar os comandos: por que você espera que R2 não veja as rotas de R3, mesmo que o RR já veja rotas dos dois lados?"
+      }
     },
     {
       "id": 2,
@@ -306,18 +338,22 @@ module.exports = {
           "desc": "DEPOIS: R4 ainda vê 192.168.30.0/24? NÃO deve ver!"
         }
       ],
-      "expected": "192.168.30.0/24 aparece em R1 e R2 com Community 'no-export'. R4 NÃO deve ver este prefixo — o R2 respeitou o no-export e não anunciou para o peer eBGP R4."
+      "expected": "192.168.30.0/24 aparece em R1 e R2 com Community 'no-export'. R4 NÃO deve ver este prefixo — o R2 respeitou o no-export e não anunciou para o peer eBGP R4.",
+      "predict": {
+        "id": "predict_step4",
+        "prompt": "Depois de marcar 192.168.30.0/24 com no-export em R3, você espera que R4 (peer eBGP de R2) receba essa rota quando R2 tentar anunciá-la? Por quê?"
+      }
     },
     {
       "id": 5,
       "title": "Configurar Community customizada e filtrar por community-list",
-      "theory": "Communities customizadas seguem o formato ASN:valor, onde você define o significado. Por exemplo, AS 1 pode definir:\n- 1:100 = \"rota de alta prioridade\"\n- 1:200 = \"rota de backup\"\n- 1:999 = \"não anunciar para clientes\"\n\nPara FILTRAR rotas por Community, usa-se community-list:\n\n  ip community-list standard NOME permit 1:100\n\nE depois na route-map:\n  route-map FILTRO permit 10\n   match community NOME\n   set local-preference 200\n\nIsso permite implementar políticas sofisticadas: R3 pode marcar suas rotas com communities, e R1/RR/R2 podem reagir automaticamente aplicando Local Preference, MED ou até bloqueio — sem precisar de prefix-lists em cada roteador.",
-      "description": "Configure uma Community customizada para influenciar a seleção de rota:\n\n1. Em R3: marque 192.168.3.0/24 com Community 1:100 (alta prioridade)\n2. Em R1: crie um community-list que reconhece 1:100 e aplique Local Preference 200 para essas rotas\n\nAssim, quando R2 receber 192.168.3.0/24 via RR (refletida de R1), ela chegará com Local Preference 200 — mais preferida que qualquer outra rota para o mesmo prefixo com LP padrão (100).\n\nDica: lembre de adicionar 'send-community' na sessão de R1 para R3 se ainda não estiver configurado.",
+      "theory": "Communities customizadas seguem o formato ASN:valor, onde você define o significado. Por exemplo, AS 1 pode definir:\n- {{commHigh}} = \"rota de alta prioridade\"\n- {{commBackup}} = \"rota de backup\"\n- 1:999 = \"não anunciar para clientes\"\n\nPara FILTRAR rotas por Community, usa-se community-list:\n\n  ip community-list standard NOME permit {{commHigh}}\n\nE depois na route-map:\n  route-map FILTRO permit 10\n   match community NOME\n   set local-preference 200\n\nIsso permite implementar políticas sofisticadas: R3 pode marcar suas rotas com communities, e R1/RR/R2 podem reagir automaticamente aplicando Local Preference, MED ou até bloqueio — sem precisar de prefix-lists em cada roteador.",
+      "description": "Configure uma Community customizada para influenciar a seleção de rota:\n\n1. Em R3: marque 192.168.3.0/24 com Community {{commHigh}} (alta prioridade)\n2. Em R1: crie um community-list que reconhece {{commHigh}} e aplique Local Preference 200 para essas rotas\n\nAssim, quando R2 receber 192.168.3.0/24 via RR (refletida de R1), ela chegará com Local Preference 200 — mais preferida que qualquer outra rota para o mesmo prefixo com LP padrão (100).\n\nDica: lembre de adicionar 'send-community' na sessão de R1 para R3 se ainda não estiver configurado.",
       "commands": [
         {
           "cmd": "show running-config",
           "router": "R3",
-          "desc": "Confirme set community 1:100 na route-map de saída"
+          "desc": "Confirme set community {{commHigh}} na route-map de saída"
         },
         {
           "cmd": "show running-config",
@@ -342,7 +378,7 @@ module.exports = {
         {
           "cmd": "show ip bgp",
           "router": "RR",
-          "desc": "RR vê a Community 1:100 nas rotas de R3?"
+          "desc": "RR vê a Community {{commHigh}} nas rotas de R3?"
         }
       ],
       "expected": "192.168.3.0/24 deve ter Local Preference 200 em R1 após aplicar o filtro por community-list. R2 deve receber a mesma rota com LP 200 via reflexão do RR."
@@ -350,9 +386,9 @@ module.exports = {
   ],
   "challenge": {
     "title": "Desafio: Política Completa com Communities e Route Reflector",
-    "description": "Com o Route Reflector funcionando e Communities configuradas, implemente as seguintes políticas adicionais:\n\n1. Configure R4 para marcar 192.168.40.0/24 com Community 1:200 (indicando \"rota de backup\").\n   Em R2, crie um filtro que aplica Local Preference 50 para rotas com Community 1:200.\n   Verifique que R1 também recebe esta rota com LP 50 via RR.\n\n2. Configure a Community no-advertise em 192.168.30.0/24 em vez de no-export.\n   Observe a diferença: com no-advertise, a rota não chega nem a R2 via RR.\n   Depois restaure para no-export para manter o comportamento anterior.\n\n3. Adicione um segundo Route Reflector (torne o R1 também um RR) para redundância.\n   Verifique que as rotas ainda chegam corretamente usando o CLUSTER_LIST para evitar loops.",
+    "description": "Com o Route Reflector funcionando e Communities configuradas, implemente as seguintes políticas adicionais:\n\n1. Configure R4 para marcar 192.168.40.0/24 com Community {{commBackup}} (indicando \"rota de backup\").\n   Em R2, crie um filtro que aplica Local Preference 50 para rotas com Community {{commBackup}}.\n   Verifique que R1 também recebe esta rota com LP 50 via RR.\n\n2. Configure a Community no-advertise em 192.168.30.0/24 em vez de no-export.\n   Observe a diferença: com no-advertise, a rota não chega nem a R2 via RR.\n   Depois restaure para no-export para manter o comportamento anterior.\n\n3. Adicione um segundo Route Reflector (torne o R1 também um RR) para redundância.\n   Verifique que as rotas ainda chegam corretamente usando o CLUSTER_LIST para evitar loops.",
     "hints": [
-      "Para o item 1: configure route-map em R4 com 'set community 1:200', aplique out para R2. Em R2: ip community-list + route-map in com 'set local-preference 50'",
+      "Para o item 1: configure route-map em R4 com 'set community {{commBackup}}', aplique out para R2. Em R2: ip community-list + route-map in com 'set local-preference 50'",
       "no-advertise (65535:65282) impede propagação para QUALQUER peer — inclusive iBGP. Por isso R2 deixa de receber a rota via RR",
       "Para RR redundante: configure R1 com 'neighbor 10.0.0.3 route-reflector-client' — R1 passa a ser RR também para R2, criando redundância",
       "Com dois RRs (RR e R1), use 'bgp cluster-id' para que ambos usem o mesmo Cluster-ID, evitando que o CLUSTER_LIST cause descarte de rotas"
@@ -397,8 +433,8 @@ module.exports = {
         "text": "Após marcar 192.168.30.0/24 com no-export em R3 e essa rota chegar via RR ao R2, o que acontece quando R2 tenta anunciar essa rota para R4?",
         "options": [
           "R4 recebe a rota normalmente, porque no-export só afeta o roteador que recebeu diretamente",
-          "R2 não recebe a rota via RR, pois o RR também respeita o no-export",
-          "R2 não recebe a rota 192.168.30.0/24 de R3, porque o RR não a reflete para peers iBGP quando marcada com no-export",
+          "R2 recebe a rota via RR normalmente, mas não a repassa para R4, pois no-export impede o anúncio para qualquer peer eBGP",
+          "R2 não recebe a rota via RR, pois o RR também respeita o no-export para reflexão iBGP",
           "R4 recebe a rota, mas com o atributo no-export removido pelo RR"
         ]
       },
