@@ -254,7 +254,7 @@ async function provisionLab(session) {
 
   // Aguarda containers inicializarem completamente
   updateSessionStatus(session, 'provisioning', 'Aguardando FRR inicializar...');
-  await waitForFrrReady(session);
+  await waitForFrrReady(session, lab);
 
   // Aguarda uma janela curta para as sessoes BGP iniciarem apos todos os daemons responderem.
   updateSessionStatus(session, 'provisioning', 'Aguardando protocolos convergirem...');
@@ -325,12 +325,12 @@ async function applyFrrFilePermissions(routerDir) {
 }
 
 // ─── Espera ativa por FRR pronto ─────────────────────────────────────────────
-async function waitForFrrReady(session) {
+async function waitForFrrReady(session, lab) {
   const deadline = Date.now() + CONFIG.FRR_READY_TIMEOUT_MS;
   let lastReport = '';
 
   while (Date.now() < deadline) {
-    const checks = await Promise.all(session.containers.map(checkFrrContainerReady));
+    const checks = await Promise.all(session.containers.map(c => checkFrrContainerReady(c, lab)));
     const pending = checks.filter(c => !c.ready);
 
     if (pending.length === 0) {
@@ -346,7 +346,20 @@ async function waitForFrrReady(session) {
   throw new Error(`FRR não ficou pronto dentro de ${CONFIG.FRR_READY_TIMEOUT_MS}ms: ${lastReport}`);
 }
 
-async function checkFrrContainerReady(containerName) {
+// Monta os comandos de sondagem só para os daemons que este lab realmente liga
+// (ex.: labs OSPF-only com bgpd desligado não podem depender de "show bgp summary").
+function daemonProbeCommands(lab) {
+  const daemons = lab?.daemons || {};
+  const bgpEnabled = daemons.bgpd !== false;   // default ligado, igual FRR_DAEMONS
+  const ospfEnabled = daemons.ospfd === true;  // default desligado, igual FRR_DAEMONS
+
+  const cmds = ['show version', 'show interface brief'];
+  if (bgpEnabled) cmds.push('show bgp summary');
+  if (ospfEnabled) cmds.push('show ip ospf');
+  return cmds;
+}
+
+async function checkFrrContainerReady(containerName, lab) {
   const inspectCmd = `docker inspect ${shellQuote(containerName)} 2>/dev/null || true`;
   const { stdout: inspectOut } = await execAsync(inspectCmd);
   let inspect;
@@ -366,15 +379,12 @@ async function checkFrrContainerReady(containerName) {
     return { container: containerName, ready: false, reason: `health=${health}` };
   }
 
+  const probeCmds = daemonProbeCommands(lab);
   const daemonCmd = [
     'docker exec',
     shellQuote(containerName),
     'sh -lc',
-    shellQuote([
-      'vtysh -c "show version" >/tmp/frr-ready.out',
-      'vtysh -c "show interface brief" >>/tmp/frr-ready.out',
-      'vtysh -c "show bgp summary" >>/tmp/frr-ready.out',
-    ].join(' && ')),
+    shellQuote(probeCmds.map((c, i) => `vtysh -c "${c}" ${i === 0 ? '>' : '>>'}/tmp/frr-ready.out`).join(' && ')),
   ].join(' ');
 
   const { stdout, stderr, error } = await runCommand(daemonCmd, '/', null, { timeout: 10000 });
