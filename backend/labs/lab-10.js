@@ -29,7 +29,7 @@ const lab = {
   // área errada e o custo do desafio mudam de aluno para aluno.
   variables: {
     wrongArea: { pool: ["1", "2", "3", "4"] },
-    preferCost: { pool: ["5", "15", "25", "40"] },
+    preferCost: { pool: ["15", "25", "40", "60"] }, // sempre > 10 (custo padrão destes links)
   },
 
   autoGrade: [
@@ -63,10 +63,10 @@ const lab = {
       check: { router: "R1", cmdPattern: "show ip route 172\\.16\\.40\\.0", outputPattern: "10\\.0\\.12\\.2" },
     },
     {
-      id: "cost_applied_somewhere",
-      label: "Custo OSPF configurado em algum roteador do caminho",
+      id: "cost_applied_r1",
+      label: "Custo OSPF aumentado na interface de R1 voltada para R3",
       weight: 15,
-      check: { router: "any", cmdPattern: "show running-config", outputPattern: "ip ospf cost" },
+      check: { router: "R1", cmdPattern: "show running-config", outputPattern: "ip ospf cost" },
     },
   ],
 
@@ -107,7 +107,7 @@ const lab = {
     },
     q5: {
       type: "radio",
-      correct: "Diminuir o custo OSPF na interface de R2 em direção a R1, ou aumentar o custo na interface de R3 em direção a R1",
+      correct: "Aumentar o custo OSPF na interface de R1 voltada para R3",
       points: 15,
     },
   },
@@ -171,10 +171,11 @@ const lab = {
 
   challenge: {
     title: "Desafio: Forçar o Caminho via R2",
-    description: "Objetivo: depois de corrigir a adjacência e observar o ECMP, force R1 a preferir exclusivamente o caminho via R2 para alcançar 172.16.40.0/24 — sem desligar nenhum link.\n\nVocê tem duas abordagens válidas (escolha uma):\n1. Diminua o custo OSPF na interface de R2 voltada para R1, usando 'ip ospf cost {{preferCost}}' (um valor menor que o padrão torna esse caminho mais atrativo).\n2. Aumente o custo OSPF na interface de R3 voltada para R1, usando 'ip ospf cost {{preferCost}}' (um valor maior torna esse caminho menos atrativo).\n\nDepois de aplicar, confirme com 'show ip route 172.16.40.0/24' em R1 que sobrou apenas um next-hop: 10.0.12.2 (via R2).",
+    description: "Objetivo: depois de corrigir a adjacência e observar o ECMP, force R1 a preferir exclusivamente o caminho via R2 para alcançar 172.16.40.0/24 — sem desligar nenhum link.\n\nO custo OSPF é por interface e por sentido: o que importa para a decisão de R1 é o custo das interfaces DELE MESMO (R1), não das interfaces de R2 ou R3. Em R1, aumente o custo da interface voltada para R3 (eth2) para um valor maior que o padrão (10), usando 'ip ospf cost {{preferCost}}'. Isso torna o caminho via R3 menos atrativo, sem precisar mexer em nada em R2 ou R3.\n\nExemplo em R1:\n  configure terminal\n  interface eth2\n   ip ospf cost {{preferCost}}\n  end\n\nDepois de aplicar, confirme com 'show ip route 172.16.40.0/24' em R1 que sobrou apenas um next-hop: 10.0.12.2 (via R2).",
     hints: [
       "O comando 'ip ospf cost' é aplicado dentro do modo de configuração da interface, não dentro de 'router ospf'",
-      "Menor custo = caminho preferido no OSPF",
+      "O custo que importa é o da interface do PRÓPRIO roteador que está decidindo o caminho (R1), não da outra ponta do link",
+      "Maior custo = caminho menos atrativo no OSPF",
       "Depois de mudar o custo pode ser necessário aguardar alguns segundos para o SPF recalcular",
     ],
     questions: [
@@ -227,8 +228,8 @@ const lab = {
         type: "radio",
         text: "Para forçar R1 a preferir o caminho via R2, qual abordagem funciona?",
         options: [
-          "Aumentar o custo na interface de R2 em direção a R1",
-          "Diminuir o custo OSPF na interface de R2 em direção a R1, ou aumentar o custo na interface de R3 em direção a R1",
+          "Aumentar o custo OSPF na interface de R1 voltada para R3",
+          "Aumentar o custo OSPF na interface de R2 voltada para R1",
           "Configurar Local Preference maior em R2",
           "Desligar o OSPF em R3",
         ],
