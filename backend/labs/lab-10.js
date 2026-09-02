@@ -148,8 +148,8 @@ const lab = {
     {
       id: 3,
       title: "Corrigir a área e confirmar a adjacência",
-      theory: "Para corrigir, basta reconfigurar a network statement do OSPF em R2 com a área correta (0). O FRR aceita reemitir 'network <prefixo> area <area>' para atualizar o valor. Depois de corrigir, use 'clear ip ospf process' para forçar o OSPF a reiniciar as adjacências sem precisar reiniciar o roteador inteiro.",
-      description: "Em R2, entre em 'router ospf' e configure 'network 10.0.12.0/30 area 0' (isso substitui a associação de área anterior para essa rede). Depois rode 'clear ip ospf process' e confirme que R1 e R2 formam adjacência Full.\n\nExemplo em R2:\n  configure terminal\n  router ospf\n   network 10.0.12.0/30 area 0\n  end\n  clear ip ospf process",
+      theory: "O FRR não deixa reemitir 'network <prefixo> area <area>' com uma área diferente por cima de uma já existente para o mesmo prefixo — ele recusa com 'There is already same network statement'. É preciso remover a associação errada primeiro com 'no network <prefixo> area <área-errada>' e só depois adicionar a correta. Depois de corrigir, use 'clear ip ospf process' para forçar o OSPF a reiniciar as adjacências sem precisar reiniciar o roteador inteiro.",
+      description: "Em R2, entre em 'router ospf' e remova a associação de área errada que você encontrou no passo anterior com 'no network 10.0.12.0/30 area <área-errada>', depois adicione a correta com 'network 10.0.12.0/30 area 0'. Rode 'clear ip ospf process' e confirme que R1 e R2 formam adjacência Full (a eleição de DR/BDR pode levar uns 20-30s).\n\nExemplo em R2 (substitua <área-errada> pelo valor que você viu em 'show ip ospf interface'):\n  configure terminal\n  router ospf\n   no network 10.0.12.0/30 area <área-errada>\n   network 10.0.12.0/30 area 0\n  end\n  clear ip ospf process",
       commands: [
         { cmd: "show running-config", router: "R2", desc: "Confirme a área corrigida" },
         { cmd: "show ip ospf neighbor", router: "R1", desc: "R1 deve agora mostrar R2 e R3, ambos Full" },
@@ -159,7 +159,7 @@ const lab = {
     {
       id: 4,
       title: "Observar ECMP antes de mexer no custo",
-      theory: "Com as duas adjacências em pé, R1 tem dois caminhos de mesmo custo até a rede 172.16.40.0/24 originada por R4 (via R2 ou via R3), porque as quatro interfaces do lab têm a mesma banda e portanto o mesmo custo OSPF padrão. Quando dois ou mais caminhos têm exatamente o mesmo custo total, o OSPF pode instalar todos eles na tabela de rotas simultaneamente — isso se chama ECMP (Equal-Cost Multi-Path).",
+      theory: "A rede 172.16.40.0/24 não é uma interface OSPF de verdade em R4 — é uma rota estática (para Null0) redistribuída no OSPF via 'redistribute static', o que a torna uma rota externa (Type-5 / E2 na tabela de rotas). Rotas E2 são comparadas primeiro pelo custo externo (igual nos dois caminhos, pois é a mesma rota redistribuída); em caso de empate, o desempate é o custo interno até o ASBR que originou a rota — no caso, R4. Como as quatro interfaces do lab têm a mesma banda e portanto o mesmo custo OSPF padrão, esse custo interno também empata entre o caminho via R2 e via R3, e o OSPF instala os dois simultaneamente na tabela de rotas — isso se chama ECMP (Equal-Cost Multi-Path). É exatamente esse desempate por custo interno que o desafio a seguir vai explorar.",
       description: "Verifique a tabela de rotas de R1 para 172.16.40.0/24 e observe quantos next-hops aparecem.",
       commands: [
         { cmd: "show ip route 172.16.40.0/24", router: "R1", desc: "Rota(s) para a rede de R4" },
@@ -310,7 +310,7 @@ router ospf
  ospf router-id 4.4.4.4
  network 10.0.24.0/30 area 0
  network 10.0.34.0/30 area 0
- network 172.16.40.0/24 area 0
+ redistribute static
 !
 ip route 172.16.40.0/24 Null0
 `,
