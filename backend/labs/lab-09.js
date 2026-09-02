@@ -5,6 +5,7 @@
 
 module.exports = {
   "id": 9,
+  "protocol": "bgp",
   "title": "Route Reflector e BGP Communities",
   "topic": "Escalabilidade iBGP e Políticas Avançadas",
   "difficulty": "Avançado",

@@ -7,6 +7,7 @@
 
 module.exports = {
   id: 1,
+  protocol: "bgp",
   title: "MED e AS-Path Prepend",
   topic: "Atributos de Seleção de Caminho",
   difficulty: "Iniciante",

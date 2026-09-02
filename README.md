@@ -1,8 +1,9 @@
-# LabNet - BGP Lab Platform
+# LabNet - Plataforma de Laboratórios de Roteamento
 
-Plataforma web para laboratorios praticos de BGP com FRR, Containerlab e Docker.
-O sistema provisiona automaticamente uma topologia isolada por aluno e suporta ate
-15 alunos simultaneos, respeitando os recursos do servidor.
+Plataforma web para laboratorios praticos de BGP, OSPF e OSPF+BGP com FRR,
+Containerlab e Docker. O sistema provisiona automaticamente uma topologia
+isolada por aluno e suporta ate 15 alunos simultaneos, respeitando os
+recursos do servidor.
 
 ## Estado Atual
 
@@ -26,20 +27,24 @@ de namespace e criacao de links. Por isso, o desenho suportado em VPS Linux e:
 
 ## Labs Disponiveis
 
-| Lab | Titulo | Perfil |
-|---|---|---|
-| 1 | MED e AS-Path Prepend | leve |
-| 2 | BGP Local Preference | leve |
-| 3 | BGP Path Control | leve |
-| 4 | BGP Confederations | moderado |
-| 5 | Bestpath AS-PATH Ignore e Aggregate Address | leve |
-| 6 | Community, AS-Path Prepend e Default Route | leve |
-| 7 | BGP Backdoor e AS-Path Prepend | leve, habilita OSPF |
-| 8 | AS-Path Prepend, Weight e Default Route | leve |
-| 9 | Route Reflector e BGP Communities | moderado |
+| Lab | Titulo | Protocolo | Perfil |
+|---|---|---|---|
+| 1 | MED e AS-Path Prepend | BGP | leve |
+| 2 | BGP Local Preference | BGP | leve |
+| 3 | BGP Path Control | BGP | leve |
+| 4 | BGP Confederations | BGP | moderado |
+| 5 | Bestpath AS-PATH Ignore e Aggregate Address | BGP | leve |
+| 6 | Community, AS-Path Prepend e Default Route | BGP | leve |
+| 7 | BGP Backdoor e AS-Path Prepend | BGP + OSPF | leve |
+| 8 | AS-Path Prepend, Weight e Default Route | BGP | leve |
+| 9 | Route Reflector e BGP Communities | BGP | moderado |
+| 10 | OSPF — Diagnóstico de Falha de Adjacência e Seleção de Caminho | OSPF | leve |
 
 Os labs ficam em `backend/labs/lab-XX.js` e sao carregados automaticamente. Para
-ocultar um lab sem apagar o arquivo, use `enabled: false`.
+ocultar um lab sem apagar o arquivo, use `enabled: false`. Veja
+`backend/labs/README.md` para o schema completo, incluindo os campos
+`protocol`, `variables` (aleatorização por sessão) e `predict` (previsão
+antes de verificar).
 
 ## Arquitetura De Producao
 

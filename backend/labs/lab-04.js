@@ -6,6 +6,7 @@
 
 const lab = {
   "id": 4,
+  "protocol": "bgp",
   "title": "BGP Confederations",
   "topic": "Escalabilidade BGP",
   "difficulty": "Avançado",

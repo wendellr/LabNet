@@ -10,6 +10,7 @@
 
 module.exports = {
   id: 5,
+  protocol: "bgp",
   enabled: true,
   title: "Bestpath AS-PATH Ignore e Aggregate Address",
   topic: "Seleção de Caminho e Agregação",

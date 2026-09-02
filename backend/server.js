@@ -1,5 +1,5 @@
 /**
- * BGP Lab Platform — Backend Server
+ * LabNet — Backend Server
  * Gerencia provisionamento de containers Docker/ContainerLab para até 15 alunos simultâneos
  * Auto-cleanup após 30 minutos de inatividade
  */
@@ -23,7 +23,7 @@ const { Resend } = require('resend');
 // ─── Email (Resend) ──────────────────────────────────────────────────────────
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const TEACHER_EMAIL  = process.env.TEACHER_EMAIL  || '';
-const RESEND_FROM    = process.env.RESEND_FROM || 'BGP Lab Platform <onboarding@resend.dev>';
+const RESEND_FROM    = process.env.RESEND_FROM || 'LabNet <onboarding@resend.dev>';
 
 const app = express();
 const server = http.createServer(app);
@@ -63,11 +63,12 @@ const wsClients = new Map();    // ws -> { sessionId, role }
 let eventLog = [];              // log global de eventos
 
 // ─── Modelos ───────────────────────────────────────────────────────────────
-function createSession(studentName, labId, sessionId = null) {
+function createSession(studentName, labId, sessionId = null, matricula = '') {
   const id = sessionId || crypto.randomBytes(8).toString('hex');
   return {
     id,
     studentName,
+    matricula: matricula || '',
     labId,
     status: 'provisioning',   // provisioning | running | idle | cleaning | cleaned
     createdAt: Date.now(),
@@ -82,6 +83,7 @@ function createSession(studentName, labId, sessionId = null) {
     mgmtSubnetOctet: null,
     labDir: null,
     error: null,
+    materializedLab: null,     // lab com variables{} resolvidas para esta sessão (materializeLab)
   };
 }
 
@@ -115,6 +117,7 @@ function getDashboardSnapshot() {
     list.push({
       id: s.id,
       studentName: s.studentName,
+      matricula: s.matricula || '',
       labId: s.labId,
       status: s.status,
       createdAt: s.createdAt,
@@ -142,9 +145,66 @@ const FRR_UID = parseInt(process.env.FRR_UID || '100', 10);
 const FRR_GID = parseInt(process.env.FRR_GID || '101', 10);
 const FRRVTY_GID = parseInt(process.env.FRRVTY_GID || '102', 10);
 
+// ─── Aleatorização por sessão (lab.variables) ───────────────────────────────
+// PRNG determinístico por sessionId (não precisa ser cripto-forte — só precisa
+// que o mesmo aluno sempre veja os mesmos valores, e alunos diferentes vejam
+// combinações diferentes). mulberry32 seedado por hash simples da string.
+function seededRng(seedStr) {
+  let h = 1779033703 ^ seedStr.length;
+  for (let i = 0; i < seedStr.length; i++) {
+    h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  let seed = h >>> 0;
+  return function rng() {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pickFromPool(rng, pool) {
+  return pool[Math.floor(rng() * pool.length)];
+}
+
+// Substitui recursivamente placeholders {{nome}} por valores resolvidos, em
+// qualquer string dentro do objeto (frr_configs, steps, verifications, etc).
+function deepReplaceTokens(value, tokenMap) {
+  if (typeof value === 'string') {
+    return value.replace(/\{\{(\w+)\}\}/g, (m, key) => (key in tokenMap ? String(tokenMap[key]) : m));
+  }
+  if (Array.isArray(value)) return value.map(v => deepReplaceTokens(v, tokenMap));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = deepReplaceTokens(v, tokenMap);
+    return out;
+  }
+  return value;
+}
+
+// Resolve lab.variables (se existir) de forma determinística por sessão e
+// devolve uma cópia do lab com todos os {{placeholders}} substituídos. Labs
+// sem `variables` voltam inalterados (retrocompatível, custo zero).
+function materializeLab(lab, session) {
+  if (!lab.variables || Object.keys(lab.variables).length === 0) return lab;
+
+  const rng = seededRng(session.id);
+  const resolvedVariables = {};
+  for (const [name, spec] of Object.entries(lab.variables)) {
+    resolvedVariables[name] = pickFromPool(rng, spec.pool);
+  }
+
+  const materialized = deepReplaceTokens(lab, resolvedVariables);
+  materialized.resolvedVariables = resolvedVariables;
+  return materialized;
+}
+
 async function provisionLab(session) {
-  const lab = LABS[session.labId];
-  if (!lab) throw new Error(`Lab ${session.labId} não encontrado`);
+  const baseLab = LABS[session.labId];
+  if (!baseLab) throw new Error(`Lab ${session.labId} não encontrado`);
+  const lab = materializeLab(baseLab, session);
+  session.materializedLab = lab;
 
   const labDir = path.join(CONFIG.LAB_BASE_DIR, `session-${session.id}`);
   session.labDir = labDir;
@@ -197,7 +257,7 @@ async function provisionLab(session) {
   await waitForFrrReady(session);
 
   // Aguarda uma janela curta para as sessoes BGP iniciarem apos todos os daemons responderem.
-  updateSessionStatus(session, 'provisioning', 'Aguardando BGP convergir...');
+  updateSessionStatus(session, 'provisioning', 'Aguardando protocolos convergirem...');
   await sleep(5000);
   updateSessionStatus(session, 'running', 'Lab pronto!');
   logEvent('provision_done', { sessionId: session.id, containers: session.containers.length });
@@ -514,7 +574,11 @@ function summarizeTopology(lab) {
       if (currentInterface) {
         const ipMatch = line.match(/^ip address\s+(\S+)/);
         if (ipMatch) interfaces[currentInterface].addresses.push(ipMatch[1]);
-        if (line === '!') currentInterface = null;
+        const costMatch = line.match(/^ip ospf cost\s+(\d+)/);
+        if (costMatch) interfaces[currentInterface].ospfCost = costMatch[1];
+        const ifAreaMatch = line.match(/^ip ospf area\s+(\S+)/);
+        if (ifAreaMatch) interfaces[currentInterface].ospfArea = ifAreaMatch[1];
+        if (line === '!' || line === 'exit') currentInterface = null;
       }
     }
 
@@ -527,6 +591,11 @@ function summarizeTopology(lab) {
       .map(([, ip]) => ip);
     const loopback = interfaces.lo?.addresses?.[0] || '';
 
+    const ospfEnabled = /router ospf\b/.test(conf);
+    const ospfRouterIdMatch = conf.match(/ospf router-id\s+(\S+)/);
+    const ospfNetworks = [...conf.matchAll(/network\s+(\S+)\s+area\s+(\S+)/g)]
+      .map(([, network, area]) => ({ network, area }));
+
     routers[router] = {
       asn: asMatch?.[1] || null,
       routerId: routerIdMatch?.[1] || null,
@@ -535,6 +604,10 @@ function summarizeTopology(lab) {
       interfaces: Object.values(interfaces),
       neighbors,
       routeReflectorClients,
+      ospf: ospfEnabled ? {
+        routerId: ospfRouterIdMatch?.[1] || null,
+        networks: ospfNetworks,
+      } : null,
     };
   }
 
@@ -619,7 +692,7 @@ setInterval(async () => {
 
 // Criar nova sessão de lab
 app.post('/api/session', async (req, res) => {
-  const { studentName, labId } = req.body;
+  const { studentName, labId, matricula } = req.body;
   if (!studentName || !labId) return res.status(400).json({ error: 'studentName e labId obrigatórios' });
 
   const active = [...sessions.values()].filter(s => ['provisioning','running','idle'].includes(s.status));
@@ -627,7 +700,7 @@ app.post('/api/session', async (req, res) => {
     return res.status(503).json({ error: `Capacidade máxima atingida (${CONFIG.MAX_STUDENTS} alunos). Tente em alguns minutos.` });
   }
 
-  const session = createSession(studentName, labId);
+  const session = createSession(studentName, labId, null, matricula);
   sessions.set(session.id, session);
   logEvent('session_created', { sessionId: session.id, student: studentName, labId });
   broadcastDashboard();
@@ -648,7 +721,7 @@ app.get('/api/session/:id', (req, res) => {
   const s = sessions.get(req.params.id);
   if (!s) return res.status(404).json({ error: 'Sessão não encontrada' });
   res.json({
-    id: s.id, studentName: s.studentName, labId: s.labId,
+    id: s.id, studentName: s.studentName, matricula: s.matricula || '', labId: s.labId,
     status: s.status, containers: s.containers,
     commandCount: s.commandHistory.length,
     progress: s.progress, score: s.score,
@@ -706,7 +779,7 @@ app.post('/api/session/:id/exec', async (req, res) => {
 
 // Avaliação automática por padrões de output
 function autoEvaluateProgress(session, router, command, output) {
-  const lab = LABS[session.labId];
+  const lab = session.materializedLab || LABS[session.labId];
   if (!lab || !lab.autoGrade) return;
 
   for (const check of lab.autoGrade) {
@@ -766,7 +839,7 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
   }
   const emailClient = new Resend(emailKey);
 
-  const lab = LABS[session.labId];
+  const lab = session.materializedLab || LABS[session.labId];
   const labTitle = lab?.title || `Lab ${session.labId}`;
   const completedSteps = Object.values(session.progress || {}).filter(p => p.completed);
   const duration = session.lastActivity
@@ -807,7 +880,7 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
 
     <!-- Header -->
     <div style="background:#020817;padding:28px 32px">
-      <div style="font-size:11px;color:#475569;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">BGP Lab Platform</div>
+      <div style="font-size:11px;color:#475569;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">LabNet</div>
       <h1 style="margin:0;color:#00d4ff;font-size:22px;font-weight:700">${subjectEmoji} Resultado do Lab ${session.labId}</h1>
       <div style="color:#94a3b8;font-size:14px;margin-top:4px">${labTitle}</div>
     </div>
@@ -817,6 +890,7 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
       <div>
         <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px">Aluno</div>
         <div style="font-size:18px;font-weight:600;color:#1e293b;margin-top:2px">${session.studentName}</div>
+        ${session.matricula ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px">Matrícula: ${session.matricula}</div>` : ''}
       </div>
       <div>
         <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px">Nota</div>
@@ -892,7 +966,7 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
 
     <!-- Footer -->
     <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center">
-      <div style="font-size:11px;color:#94a3b8">BGP Lab Platform • ${new Date().toLocaleString('pt-BR')} • Sessão ${session.id.slice(0,8)}...</div>
+      <div style="font-size:11px;color:#94a3b8">LabNet • ${new Date().toLocaleString('pt-BR')} • Sessão ${session.id.slice(0,8)}...</div>
     </div>
   </div>
 </body>
@@ -901,7 +975,7 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
   const result = await emailClient.emails.send({
     from: emailFrom,
     to: [emailTo],
-    subject: `${subjectEmoji} [BGP Lab ${session.labId}] ${session.studentName} — ${score}/100`,
+    subject: `${subjectEmoji} [LabNet ${session.labId}] ${session.studentName}${session.matricula ? ` (${session.matricula})` : ''} — ${score}/100`,
     html,
   });
 
@@ -997,7 +1071,7 @@ async function runVerifications(lab, session) {
 }
 
 async function evaluateAnswers(session, answers) {
-  const lab = LABS[session.labId];
+  const lab = session.materializedLab || LABS[session.labId];
   if (!lab) return { score: 0, verResults: [], answerResults: [], feedback: '' };
 
   // ── 1. Verificações técnicas (comandos e outputs) ──────────────────────────
@@ -1165,6 +1239,7 @@ app.get('/api/labs', (req, res) => {
     id: l.id,
     title: l.title,
     topic: l.topic,
+    protocol: l.protocol || 'bgp',
     difficulty: l.difficulty,
     duration: l.duration,
     routers: l.routers,
@@ -1177,9 +1252,20 @@ app.get('/api/labs', (req, res) => {
 app.get('/api/labs/:id', (req, res) => {
   const lab = LABS[parseInt(req.params.id)];
   if (!lab) return res.status(404).json({ error: 'Lab não encontrado' });
-  // Retorna tudo exceto frr_configs (são grandes e não necessários no frontend)
-  const { frr_configs, ...rest } = lab;
-  res.json({ ...rest, topologyDetails: summarizeTopology(lab) });
+  // Retorna tudo exceto frr_configs (são grandes) e variables (só relevantes internamente)
+  const { frr_configs, variables, ...rest } = lab;
+  res.json({ ...rest, protocol: lab.protocol || 'bgp', topologyDetails: summarizeTopology(lab) });
+});
+
+// Detalhe do lab visto por uma sessão específica — usa a versão materializada
+// (variables{} já resolvidas para esse aluno) quando o lab declara `variables`.
+app.get('/api/session/:id/lab', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  const lab = session.materializedLab || LABS[session.labId];
+  if (!lab) return res.status(404).json({ error: 'Lab não encontrado' });
+  const { frr_configs, variables, ...rest } = lab;
+  res.json({ ...rest, protocol: lab.protocol || 'bgp', topologyDetails: summarizeTopology(lab) });
 });
 
 app.get('/api/health', (req, res) => {
@@ -1393,7 +1479,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ─── Start ─────────────────────────────────────────────────────────────────
 server.listen(CONFIG.PORT, CONFIG.HOST, () => {
-  console.log(`🌐 BGP Lab Platform rodando em ${CONFIG.HOST}:${CONFIG.PORT}`);
+  console.log(`🌐 LabNet rodando em ${CONFIG.HOST}:${CONFIG.PORT}`);
   console.log(`📁 Labs dir: ${CONFIG.LAB_BASE_DIR}`);
   console.log(`👥 Máx alunos: ${CONFIG.MAX_STUDENTS}`);
   console.log(`⏱  Auto-cleanup: ${CONFIG.INACTIVITY_TIMEOUT_MS / 60000} min`);

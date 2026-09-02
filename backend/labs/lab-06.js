@@ -10,6 +10,7 @@
 
 module.exports = {
   id: 6,
+  protocol: "bgp",
   enabled: true,
   title: "Community, AS-Path Prepend e Default Route",
   topic: "Communities e Políticas BGP",

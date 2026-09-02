@@ -11,6 +11,7 @@
 
 module.exports = {
   id: 8,
+  protocol: "bgp",
   enabled: true,
   title: "AS-Path Prepend, Weight e Default Route",
   topic: "eBGP Multihop e Preferência Local",

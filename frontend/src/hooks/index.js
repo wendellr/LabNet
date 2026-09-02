@@ -22,6 +22,19 @@ export async function apiFetch(method, path, body) {
   return res.json();
 }
 
+// ─── fetchLabDetail ───────────────────────────────────────────────────────
+// Busca o detalhe do lab pelo endpoint por sessão (valores de `variables`
+// já resolvidos para esse aluno) quando há sessionId; cai para o endpoint
+// genérico por labId se a sessão ainda não existir ou o endpoint falhar.
+export async function fetchLabDetail(sessionId, labId) {
+  if (!sessionId) return apiFetch("GET", `/labs/${labId}`);
+  try {
+    return await apiFetch("GET", `/session/${sessionId}/lab`);
+  } catch {
+    return apiFetch("GET", `/labs/${labId}`);
+  }
+}
+
 // ─── useWebSocket ─────────────────────────────────────────────────────────
 export function useWebSocket(role, sessionId, onMessage) {
   const wsRef = useRef(null);

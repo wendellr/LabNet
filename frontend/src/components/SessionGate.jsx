@@ -3,9 +3,18 @@ import { apiFetch } from "../hooks/index.js";
 import { LABS_META, AVAILABLE_LAB_IDS, DIFF_STYLE } from "../data/labs.js";
 import { Badge } from "./UI.jsx";
 
+const PROTOCOL_FILTERS = [
+  { key: "all", label: "Todos" },
+  { key: "bgp", label: "BGP" },
+  { key: "ospf", label: "OSPF" },
+  { key: "bgp+ospf", label: "BGP + OSPF" },
+];
+
 export function SessionGate({ onSession, onTeacher }) {
   const [name, setName]           = useState("");
+  const [matricula, setMatricula] = useState("");
   const [labId, setLabId]         = useState(1);
+  const [protocolFilter, setProtocolFilter] = useState("all");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState(null);
   const [teacherPw, setTeacherPw] = useState("");
@@ -27,18 +36,32 @@ export function SessionGate({ onSession, onTeacher }) {
       .catch(() => {});
   }, []);
 
-  const availableLabs = apiLabs?.length
+  const allLabs = apiLabs?.length
     ? apiLabs
     : LABS_META.filter((l) => AVAILABLE_LAB_IDS.includes(l.id));
+  const availableLabs = protocolFilter === "all"
+    ? allLabs
+    : allLabs.filter((lab) => (lab.protocol || "bgp") === protocolFilter);
   const selectedLab = availableLabs.find((lab) => lab.id === labId) || availableLabs[0];
   const selectedStyle = DIFF_STYLE[selectedLab?.difficulty] || DIFF_STYLE.Iniciante;
+
+  // Se o filtro de protocolo tira o lab selecionado da lista, seleciona o primeiro visível
+  useEffect(() => {
+    if (availableLabs.length && !availableLabs.some((lab) => lab.id === labId)) {
+      setLabId(availableLabs[0].id);
+    }
+  }, [protocolFilter]); // eslint-disable-line
 
   const startLab = async () => {
     if (!name.trim()) return setError("Digite seu nome");
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch("POST", "/session", { studentName: name.trim(), labId });
+      const data = await apiFetch("POST", "/session", {
+        studentName: name.trim(),
+        labId,
+        matricula: matricula.trim() || undefined,
+      });
       onSession(data.sessionId, name.trim(), labId);
     } catch (e) {
       setError(e.message);
@@ -86,8 +109,8 @@ export function SessionGate({ onSession, onTeacher }) {
         {/* Logo block */}
         <div style={{ textAlign: "center", marginBottom: 22 }}>
           <div style={{ fontSize: 42, marginBottom: 8 }}>🌐</div>
-          <h1 style={{ margin: 0, fontSize: 30, fontWeight: 900, color: "#00d4ff", letterSpacing: 3, textTransform: "uppercase" }}>BGP Lab</h1>
-          <p style={{ color: "#475569", margin: "6px 0 0", fontSize: 12, letterSpacing: 1 }}>ContainerLab · FRR · Laboratório Prático de BGP</p>
+          <h1 style={{ margin: 0, fontSize: 30, fontWeight: 900, color: "#00d4ff", letterSpacing: 3, textTransform: "uppercase" }}>LabNet</h1>
+          <p style={{ color: "#475569", margin: "6px 0 0", fontSize: 12, letterSpacing: 1 }}>ContainerLab · FRR · Laboratórios de Roteamento</p>
           <div style={{ marginTop: 14, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
             <Badge style={{ background: "#052e16", color: "#4ade80", border: "1px solid #166534" }}>
               ⚡ {publicConfig?.maxStudents ? `Até ${publicConfig.maxStudents} alunos simultâneos` : "Capacidade configurada no servidor"}
@@ -113,6 +136,17 @@ export function SessionGate({ onSession, onTeacher }) {
                     placeholder="Ex: João Silva"
                     style={fieldStyle}
                     autoFocus
+                  />
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>MATRÍCULA (OPCIONAL)</label>
+                  <input
+                    value={matricula}
+                    onChange={(e) => setMatricula(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && startLab()}
+                    placeholder="Ex: 2023012345"
+                    style={fieldStyle}
                   />
                 </div>
 
@@ -150,6 +184,22 @@ export function SessionGate({ onSession, onTeacher }) {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 10 }}>
                   <label style={{ color: "#94a3b8", fontSize: 10, letterSpacing: 1 }}>ESCOLHA O LABORATÓRIO</label>
                   <span style={{ color: "#475569", fontSize: 10 }}>{availableLabs.length} disponíveis</span>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                  {PROTOCOL_FILTERS.map((f) => {
+                    const active = protocolFilter === f.key;
+                    return (
+                      <button key={f.key} type="button" onClick={() => setProtocolFilter(f.key)}
+                        style={{
+                          background: active ? "#0d1f3c" : "#020817",
+                          border: `1px solid ${active ? "#0ea5e9" : "#1e293b"}`,
+                          color: active ? "#67e8f9" : "#64748b",
+                          padding: "4px 12px", borderRadius: 20, cursor: "pointer", fontSize: 11, fontWeight: active ? 700 : 500,
+                        }}>
+                        {f.label}
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="lab-picker-grid">
                   {availableLabs.map((lab) => {

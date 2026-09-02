@@ -10,6 +10,7 @@
 
 module.exports = {
   id: 3,
+  protocol: "bgp",
   enabled: true,
   title: "BGP Path Control",
   topic: "Weight, ORIGIN e Confederação",

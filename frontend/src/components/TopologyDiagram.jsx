@@ -36,7 +36,7 @@ function computeLayout(nodes, links, width = 700, height = 340) {
 }
 
 // ─── Cores por tipo de sessão/link ────────────────────────────────────────────
-const LINK_COLOR  = { eBGP: "#00d4ff", iBGP: "#a78bfa", Confed: "#fb923c", "RR-client": "#4ade80", L3: "#94a3b8" };
+const LINK_COLOR  = { eBGP: "#00d4ff", iBGP: "#a78bfa", Confed: "#fb923c", "RR-client": "#4ade80", OSPF: "#2dd4bf", L3: "#94a3b8" };
 const LINK_DASH   = { iBGP: "6 3", Confed: "4 2", L3: "3 3" };
 const NODE_STATUS_COLOR = {
   running: "#4ade80", provisioning: "#fbbf24", error: "#f87171", default: "#00d4ff",
@@ -69,6 +69,26 @@ function hasBgpNeighborTo(source, target) {
   return (source?.neighbors || []).some((neighbor) => targetAddresses.has(neighbor.ip));
 }
 
+function ipToInt(ip) {
+  return ip.split(".").reduce((acc, octet) => (acc << 8) + (parseInt(octet, 10) || 0), 0) >>> 0;
+}
+
+function cidrContains(cidr, ip) {
+  const [netIp, bitsStr] = String(cidr || "").split("/");
+  const bits = parseInt(bitsStr, 10);
+  if (!netIp || Number.isNaN(bits) || !ip) return false;
+  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  return (ipToInt(netIp) & mask) === (ipToInt(ip) & mask);
+}
+
+function hasOspfAdjacencyTo(source, target) {
+  if (!source?.ospf?.networks?.length) return false;
+  const targetAddresses = routerAddresses(target);
+  return source.ospf.networks.some(({ network }) =>
+    [...targetAddresses].some((addr) => cidrContains(network, addr))
+  );
+}
+
 function inferLinkType(lab, from, to, explicitType) {
   if (explicitType) return explicitType;
 
@@ -76,7 +96,10 @@ function inferLinkType(lab, from, to, explicitType) {
   const b = getRouterDetails(lab, to);
   if (!a || !b) return "eBGP";
   const hasSession = hasBgpNeighborTo(a, b) || hasBgpNeighborTo(b, a);
-  if (!hasSession) return "L3";
+  if (!hasSession) {
+    const hasOspf = hasOspfAdjacencyTo(a, b) || hasOspfAdjacencyTo(b, a);
+    return hasOspf ? "OSPF" : "L3";
+  }
 
   const aLoopback = hostAddress(a.loopback);
   const bLoopback = hostAddress(b.loopback);
@@ -382,18 +405,34 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
             const loopback = details?.loopback || loMatch?.[1];
             const neighbors = details?.neighbors || neighs.map(([, ip, as]) => ({ ip, remoteAs: as }));
             const interfaces = details?.interfaces || [];
+
+            const ospfEnabled = details?.ospf != null || /router ospf\b/.test(conf);
+            const ospfRouterIdMatch = conf.match(/ospf router-id\s+(\S+)/);
+            const ospfNets = [...conf.matchAll(/network\s+(\S+)\s+area\s+(\S+)/g)];
+            const ospfRouterId = details?.ospf?.routerId || ospfRouterIdMatch?.[1];
+            const ospfNetworks = details?.ospf?.networks?.length
+              ? details.ospf.networks
+              : ospfNets.map(([, network, area]) => ({ network, area }));
+
             return (
               <>
                 {asn && <div style={{ color: "#94a3b8" }}>AS: <span style={{ color: "#60a5fa" }}>AS{asn}</span></div>}
                 {routerId && <div style={{ color: "#94a3b8" }}>Router-ID: <span style={{ color: "#fbbf24" }}>{routerId}</span></div>}
                 {loopback && <div style={{ color: "#94a3b8" }}>Loopback: <span style={{ color: "#4ade80" }}>{loopback}</span></div>}
+                {ospfEnabled && (
+                  <div style={{ color: "#94a3b8" }}>OSPF Router-ID: <span style={{ color: "#2dd4bf" }}>{ospfRouterId || "-"}</span></div>
+                )}
                 {interfaces.length > 0 && (
                   <div style={{ marginTop: 6 }}>
                     <div style={{ color: "#64748b", fontSize: 10 }}>Interfaces:</div>
                     {interfaces.map((iface) => (
                       <div key={iface.name} style={{ color: "#94a3b8", display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <span style={{ color: iface.name === "lo" ? "#4ade80" : "#cbd5e1" }}>{iface.name}</span>
-                        <span>{iface.addresses?.join(", ") || "-"}</span>
+                        <span>
+                          {iface.addresses?.join(", ") || "-"}
+                          {iface.ospfArea && <span style={{ color: "#2dd4bf" }}> · área {iface.ospfArea}</span>}
+                          {iface.ospfCost && <span style={{ color: "#2dd4bf" }}> · custo {iface.ospfCost}</span>}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -404,6 +443,16 @@ export function TopologyDiagram({ lab, sessionStatus = "default", compact = fals
                     {neighbors.map(({ ip, remoteAs }, i) => (
                       <div key={i} style={{ color: "#94a3b8" }}>
                         {ip} → <span style={{ color: "#a78bfa" }}>AS{remoteAs}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {ospfNetworks.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ color: "#64748b", fontSize: 10 }}>Redes OSPF:</div>
+                    {ospfNetworks.map(({ network, area }, i) => (
+                      <div key={i} style={{ color: "#94a3b8" }}>
+                        {network} → <span style={{ color: "#2dd4bf" }}>área {area}</span>
                       </div>
                     ))}
                   </div>

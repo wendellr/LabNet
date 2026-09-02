@@ -78,7 +78,7 @@ const XTerminal = forwardRef(function XTerminal({ sessionId, router, active }, r
 
     // Mensagem inicial
     term.writeln("\x1b[1;36m╔══════════════════════════════════════════════════╗\x1b[0m");
-    term.writeln("\x1b[1;36m║   BGP Lab Platform — Terminal Interativo          ║\x1b[0m");
+    term.writeln("\x1b[1;36m║   LabNet — Terminal Interativo                    ║\x1b[0m");
     term.writeln("\x1b[1;36m╚══════════════════════════════════════════════════╝\x1b[0m");
     term.writeln("\x1b[90mClique em ▶ Conectar para iniciar sessão vtysh.\x1b[0m\r\n");
 

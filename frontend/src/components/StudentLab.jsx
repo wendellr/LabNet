@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
-import { apiFetch } from "../hooks/index.js";
+import { apiFetch, fetchLabDetail } from "../hooks/index.js";
 import { useWebSocket, useToasts, useTerminal } from "../hooks/index.js";
 import { LABS_META, LAB_STEPS, LAB_CHALLENGES } from "../data/labs.js";
 import { Badge, Card, CopyButton, Toasts, TermLine, ProvisioningScreen, ErrorScreen } from "./UI.jsx";
@@ -29,16 +29,16 @@ function CommandBlock({ entry }) {
 }
 
 // ─── RoteiroTab ───────────────────────────────────────────────────────────
-function RoteiroTab({ labId, step, setStep, onRunCmd, progress, onGoChallenge }) {
+function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoChallenge, predictions, setPredictions }) {
   const [labData, setLabData] = useState(null);
 
-  // Busca dados do lab no backend (fonte autoritativa)
-  // Fallback para dados estáticos do frontend se API falhar
+  // Busca dados do lab no backend (fonte autoritativa, com variables{} já
+  // resolvidas para esta sessão). Fallback para dados estáticos se a API falhar.
   useEffect(() => {
-    apiFetch("GET", `/labs/${labId}`)
+    fetchLabDetail(sessionId, labId)
       .then(d => setLabData(d))
       .catch(() => {});
-  }, [labId]);
+  }, [sessionId, labId]);
 
   const steps     = labData?.steps     || LAB_STEPS[labId]     || [];
   const challenge = labData?.challenge || LAB_CHALLENGES[labId] || { title: "", description: "", questions: [], hints: [] };
@@ -105,6 +105,22 @@ function RoteiroTab({ labId, step, setStep, onRunCmd, progress, onGoChallenge })
               <CommandBlock key={i} entry={c} />
             ))}
           </>
+        )}
+
+        {/* Previsão antes de verificar — captura o raciocínio do aluno antes do resultado */}
+        {cur.predict && (
+          <div style={{ background: "#1a1206", border: "1px solid #92400e", borderRadius: 8, padding: 12, margin: "0 0 14px" }}>
+            <div style={{ color: "#fbbf24", fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>
+              🔮 Antes de verificar: {cur.predict.prompt}
+            </div>
+            <textarea
+              value={predictions?.[cur.predict.id] || ""}
+              onChange={(e) => setPredictions?.((p) => ({ ...p, [cur.predict.id]: e.target.value }))}
+              placeholder="Escreva o que você espera ver e por quê — isso vale nota no desafio final."
+              rows={3}
+              style={{ width: "100%", background: "#0a0f1a", border: "1px solid #92400e", borderRadius: 6, color: "#fed7aa", padding: "8px 12px", fontSize: 12, resize: "vertical", fontFamily: "monospace", boxSizing: "border-box" }}
+            />
+          </div>
         )}
 
         {/* Resultado esperado */}
@@ -283,7 +299,7 @@ function TerminalTab({ sessionId, containers, injectRef, active, sessionReady })
 
 
 // ─── ChallengeTab ─────────────────────────────────────────────────────────
-function ChallengeTab({ labId, sessionId, onSubmitDone }) {
+function ChallengeTab({ labId, sessionId, onSubmitDone, predictions }) {
   const [labData, setLabData]   = useState(null);
   const [answers, setAnswers]   = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -291,19 +307,20 @@ function ChallengeTab({ labId, sessionId, onSubmitDone }) {
   const [hint, setHint]         = useState(false);
   const [loading, setLoading]   = useState(false);
 
-  // Busca dados do lab no backend
+  // Busca dados do lab no backend (variables{} já resolvidas para esta sessão)
   useEffect(() => {
-    apiFetch("GET", `/labs/${labId}`)
+    fetchLabDetail(sessionId, labId)
       .then(d => setLabData(d))
       .catch(() => {});
-  }, [labId]);
+  }, [sessionId, labId]);
 
   const challenge = labData?.challenge || LAB_CHALLENGES[labId];
 
   const submit = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch("POST", `/session/${sessionId}/submit`, { answers });
+      // Previsões do roteiro (cur.predict) entram junto — mesmo answerKey do desafio
+      const res = await apiFetch("POST", `/session/${sessionId}/submit`, { answers: { ...predictions, ...answers } });
       setResult(res);
       setSubmitted(true);
       onSubmitDone?.(res.score);
@@ -513,6 +530,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
   const [session, setSession]                 = useState(null);
   const [score, setScore]                     = useState(null);
   const [roteiroStep, setRoteiroStep]         = useState(0);
+  const [predictions, setPredictions]         = useState({}); // predictId -> texto do aluno (roteiro), enviado no submit
   const [toasts, pushToast]                   = useToasts();
   const labMeta  = LABS_META.find((l) => l.id === labId);
   const exitTimerRef = useRef(null);
@@ -658,18 +676,21 @@ export function StudentLab({ sessionId, studentName, labId, onExit }) {
         {activeTab === "roteiro" && (
           <RoteiroTab
             labId={labId}
+            sessionId={sessionId}
             step={roteiroStep}
             setStep={setRoteiroStep}
             onRunCmd={handleRunCmd}
             progress={progress}
             onGoChallenge={() => setActiveTab("challenge")}
+            predictions={predictions}
+            setPredictions={setPredictions}
           />
         )}
         {activeTab === "topology" && (
           <TopologyTab labId={labId} sessionStatus={provisionStatus} session={session} sessionId={sessionId} />
         )}
         {activeTab === "challenge" && (
-          <ChallengeTab labId={labId} sessionId={sessionId} onSubmitDone={setScore} />
+          <ChallengeTab labId={labId} sessionId={sessionId} onSubmitDone={setScore} predictions={predictions} />
         )}
         {activeTab === "wireshark" && (
           <WiresharkTab labId={labId} sessionId={sessionId} session={session} />
@@ -704,7 +725,7 @@ function TopologyTab({ labId, sessionStatus, session, sessionId }) {
   const [labData, setLabData] = useState(null);
 
   useEffect(() => {
-    apiFetch("GET", `/labs/${labId}`)
+    fetchLabDetail(sessionId, labId)
       .then(setLabData)
       .catch(() => {
         import("../data/labs.js").then((m) => {
@@ -714,7 +735,7 @@ function TopologyTab({ labId, sessionStatus, session, sessionId }) {
           setLabData({ routers, links, frr_configs: getFrrConfigs(labId) });
         });
       });
-  }, [labId]);
+  }, [sessionId, labId]);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -765,7 +786,7 @@ function WiresharkTab({ labId, sessionId, session }) {
   const [labData, setLabData] = useState(null);
 
   useEffect(() => {
-    apiFetch("GET", `/labs/${labId}`)
+    fetchLabDetail(sessionId, labId)
       .then(setLabData)
       .catch(() => {
         import("../data/labs.js").then((m) => {
@@ -774,20 +795,29 @@ function WiresharkTab({ labId, sessionId, session }) {
           setLabData({ routers, frr_configs: getFrrConfigs(labId) });
         });
       });
-  }, [labId]);
+  }, [sessionId, labId]);
+
+  const protocol = labData?.protocol || "bgp";
+  const PROTOCOL_TITLE = { bgp: "BGP", ospf: "OSPF", "bgp+ospf": "BGP + OSPF" }[protocol] || "BGP";
+  const PROTOCOL_HINT = {
+    bgp: "Inspect BGP OPEN · UPDATE · KEEPALIVE · NOTIFICATION",
+    ospf: "Inspect OSPF HELLO · DBD · LS_UPDATE · LS_ACK",
+    "bgp+ospf": "Alterne entre BGP e OSPF no seletor acima do capturador",
+  }[protocol] || "";
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ background: "#0a0f1a", borderBottom: "1px solid #1e293b", padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-        <span style={{ color: "#fb923c", fontSize: 12, fontWeight: "bold" }}>🔬 Analisador de Pacotes BGP</span>
+        <span style={{ color: "#fb923c", fontSize: 12, fontWeight: "bold" }}>🔬 Analisador de Pacotes {PROTOCOL_TITLE}</span>
         <span style={{ color: "#475569", fontSize: 10 }}>
-          Inspect BGP OPEN · UPDATE · KEEPALIVE · NOTIFICATION
+          {PROTOCOL_HINT}
         </span>
       </div>
       <div style={{ flex: 1, overflow: "hidden" }}>
         <PacketAnalyzer
           sessionId={sessionId}
           lab={labData}
+          protocol={protocol}
           containers={session?.containers || []}
         />
       </div>

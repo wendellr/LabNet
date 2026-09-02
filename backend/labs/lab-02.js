@@ -6,6 +6,7 @@
 
 const lab = {
   "id": 2,
+  "protocol": "bgp",
   "title": "BGP Local Preference",
   "topic": "Controle de Tráfego de Saída",
   "difficulty": "Iniciante",

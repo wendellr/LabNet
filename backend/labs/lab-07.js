@@ -10,6 +10,7 @@
 
 module.exports = {
   id: 7,
+  protocol: "bgp+ospf",
   enabled: true,
   title: "BGP Backdoor e AS-Path Prepend",
   topic: "Backdoor, Default Route e IGP/BGP",

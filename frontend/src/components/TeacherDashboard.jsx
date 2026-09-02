@@ -18,6 +18,7 @@ function SessionCard({ session, selected, onClick, onKill }) {
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: "bold" }}>{session.studentName}</span>
+          {session.matricula && <span style={{ color: "#475569", fontSize: 10 }}>({session.matricula})</span>}
           <StatusBadge status={session.status} />
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -63,7 +64,7 @@ function SessionDetail({ session, onClose }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-          <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>🔍 {session.studentName}</h3>
+          <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>🔍 {session.studentName}{session.matricula ? ` (${session.matricula})` : ""}</h3>
           <button onClick={onClose} style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "2px 8px", borderRadius: 4, cursor: "pointer", fontSize: 10 }}>✕</button>
         </div>
 
@@ -217,7 +218,7 @@ export function TeacherDashboard({ onExit }) {
         <span style={{ fontSize: 22 }}>👨‍🏫</span>
         <div>
           <h1 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: "#fb923c", letterSpacing: 2 }}>PAINEL DO PROFESSOR</h1>
-          <p style={{ margin: 0, fontSize: 10, color: "#475569" }}>BGP Lab Platform — Monitor em Tempo Real</p>
+          <p style={{ margin: 0, fontSize: 10, color: "#475569" }}>LabNet — Monitor em Tempo Real</p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
           <CapacityBar active={active.length} max={capacity} />
