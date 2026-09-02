@@ -6,8 +6,17 @@
  *
  * Redesenhado: variables (prefixo de estudo, contagem de prepend, valores
  * de MED) impedem cópia literal de comando/resposta entre alunos; predict
- * nos dois pontos onde o resultado NÃO é o óbvio (MED não muda nada de
- * cara; always-compare-med muda tudo de uma vez).
+ * nos pontos onde o resultado NÃO é o óbvio.
+ *
+ * Ordem dos passos: MED vem ANTES do AS-Path Prepend de propósito. Os dois
+ * exercícios usam o mesmo prefixo (150.1.1.0/24) e a mesma topologia em
+ * anel (R1-R2-R3-R4-R1) — se o Prepend for feito primeiro, R4 passa a
+ * preferir o caminho via R3 e, por prevenção de loop no AS-PATH (R3 já
+ * aparece no caminho que R4 receberia de volta), R4 deixa de oferecer um
+ * caminho independente pra R3 — a comparação de MED em R3 nunca chega a
+ * acontecer de verdade com dois caminhos concorrendo. Fazendo o MED
+ * primeiro, o aluno vê a comparação genuína com dois caminhos, e o
+ * Prepend por último vira uma lição extra sobre esse efeito colateral.
  */
 
 module.exports = {
@@ -28,7 +37,10 @@ module.exports = {
   ],
 
   variables: {
-    prependArg: { pool: ["1 1", "1 1 1", "1 1 1 1"] },
+    // sempre >= 3 repetições: o caminho via R3 já tem 3 hops (3 2 1), então
+    // prepend de só 1-2 cópias empataria em comprimento em vez de perder —
+    // precisa estritamente mais longo pra R4 preferir R3 de forma inequívoca.
+    prependArg: { pool: ["1 1 1", "1 1 1 1", "1 1 1 1 1"] },
     medPreferred: { pool: ["2", "5", "8", "3"] },
     medOther: { pool: ["20", "25", "30", "40"] },
   },
@@ -182,9 +194,16 @@ ip route 150.4.4.0/24 Null0
 
   autoGrade: [
     { id: "checked_bgp_table", label: "Verificou a tabela BGP", cmdContains: "show ip bgp" },
-    { id: "aspath_prepend_typed", label: "Configurou AS-Path Prepend", cmdContains: "as-path prepend" },
+    {
+      id: "saw_multiple_paths",
+      label: "Observou R3 com dois caminhos concorrentes para 150.1.1.0/24",
+      router: "R3",
+      cmdContains: "show ip bgp 150.1.1.0",
+      outputContains: "2 available",
+    },
     { id: "med_typed", label: "Configurou MED", cmdContains: "set metric" },
     { id: "always_compare_med_typed", label: "Ativou always-compare-med", cmdContains: "always-compare-med" },
+    { id: "aspath_prepend_typed", label: "Configurou AS-Path Prepend", cmdContains: "as-path prepend" },
   ],
 
   verifications: [
@@ -192,31 +211,7 @@ ip route 150.4.4.0/24 Null0
       id: "bgp_established",
       label: "Sessões BGP verificadas (show bgp summary)",
       weight: 10,
-      check: { router: "any", cmdPattern: "show bgp summary", outputPattern: "Established" },
-    },
-    {
-      id: "bgp_table_multiple_paths",
-      label: "Tabela BGP com múltiplos caminhos observada",
-      weight: 10,
-      check: { router: "R3", cmdPattern: "show ip bgp 150.1.1.0", outputPattern: "\\*\\s+150\\.1\\.1\\.0" },
-    },
-    {
-      id: "aspath_prepend_configured",
-      label: "AS-Path Prepend configurado no R1",
-      weight: 15,
-      check: { router: "R1", cmdPattern: "show running-config", outputPattern: "as-path prepend {{prependArg}}" },
-    },
-    {
-      id: "aspath_prepend_applied",
-      label: "AS-Path Prepend aplicado — R4 vê caminho mais longo via R1",
-      weight: 15,
-      check: { router: "R4", cmdPattern: "show ip bgp 150.1.1.0", outputPattern: "{{prependArg}}" },
-    },
-    {
-      id: "r4_prefers_r3",
-      label: "R4 prefere caminho via R3",
-      weight: 15,
-      check: { router: "R4", cmdPattern: "show ip bgp", outputPattern: ">\\s+150\\.1\\.1\\.0\\s+3\\.3\\.3\\.3" },
+      check: { router: "any", cmdPattern: "show bgp summary", outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+" },
     },
     {
       id: "med_configured_r2",
@@ -238,33 +233,58 @@ ip route 150.4.4.0/24 Null0
     },
     {
       id: "r3_prefers_r2_med",
-      label: "R3 prefere caminho via R2 pelo menor MED",
+      label: "R3 usa o caminho via R2 com o MED configurado para 150.1.1.0/24",
+      weight: 20,
+      check: { router: "R3", cmdPattern: "show ip bgp 150.1.1.0", outputPattern: "2\\.2\\.2\\.2 from 2\\.2\\.2\\.2[\\s\\S]*?metric {{medPreferred}}[\\s\\S]*?best" },
+    },
+    {
+      id: "aspath_prepend_configured",
+      label: "AS-Path Prepend configurado no R1",
       weight: 15,
-      check: { router: "R3", cmdPattern: "show ip bgp 150.1.1.0", outputPattern: ">\\s+150\\.1\\.1\\.0\\s+2\\.2\\.2\\.2\\s+{{medPreferred}}" },
+      check: { router: "R1", cmdPattern: "show running-config", outputPattern: "as-path prepend {{prependArg}}" },
+    },
+    {
+      id: "aspath_prepend_applied",
+      label: "AS-Path Prepend aplicado — R4 vê caminho mais longo via R1",
+      weight: 10,
+      check: { router: "R4", cmdPattern: "show ip bgp 150.1.1.0", outputPattern: "{{prependArg}}" },
+    },
+    {
+      id: "r4_prefers_r3",
+      label: "R4 prefere caminho via R3",
+      weight: 15,
+      check: { router: "R4", cmdPattern: "show ip bgp", outputPattern: ">\\s+150\\.1\\.1\\.0/24\\s+3\\.3\\.3\\.3" },
     },
   ],
 
   answerKey: {
-    predict_step4: {
+    predict_med_before: {
       type: "keywords",
       required: ["não", "nao", "mesmo as", "as diferente", "as-path"],
       anyOf: true,
-      points: 8,
+      points: 7,
       hint: "Por padrão o BGP só compara MED entre rotas recebidas do MESMO AS vizinho. R2 e R4 são ASes diferentes.",
     },
-    predict_step6: {
+    predict_med_resolve: {
       type: "keywords",
       required: ["r2", "2.2.2.2", "menor med", "menor metric"],
       anyOf: true,
-      points: 7,
+      points: 6,
       hint: "Com os dois comandos ativos, o MED passa a decidir — e o caminho configurado com o menor valor vence.",
     },
-    q1: { type: "radio", correct: "No R3, direção out para o vizinho 1.1.1.1", points: 13 },
-    q2: { type: "radio", correct: "Porque por padrão o BGP só compara MED entre rotas do mesmo AS vizinho", points: 13 },
-    q3: { type: "radio", correct: "Após o AS-PATH e após o Origin", points: 13 },
-    q4: { type: "radio", correct: "O BGP volta a comparar comprimento de AS-PATH antes do MED, podendo mudar o best path", points: 13 },
-    q5: { type: "radio", correct: "MED afeta só o vizinho diretamente conectado; AS-Path Prepend é visível por todos os ASes no caminho", points: 17 },
-    q6: { type: "radio", correct: "bgp always-compare-med + bgp bestpath as-path ignore", points: 17 },
+    predict_prepend_effect: {
+      type: "keywords",
+      required: ["um", "só um", "so um", "loop", "as-path", "não oferece", "nao oferece"],
+      anyOf: true,
+      points: 7,
+      hint: "Depois que R4 passa a preferir o caminho via R3, ele tentaria reanunciar pra R3 uma rota que já passa pelo AS3 — o próprio R3 rejeita isso (prevenção de loop no AS-PATH). R3 fica só com o caminho via R2.",
+    },
+    q1: { type: "radio", correct: "No R3, direção out para o vizinho 1.1.1.1", points: 12 },
+    q2: { type: "radio", correct: "Porque por padrão o BGP só compara MED entre rotas do mesmo AS vizinho", points: 12 },
+    q3: { type: "radio", correct: "Após o AS-PATH e após o Origin", points: 12 },
+    q4: { type: "radio", correct: "O BGP volta a comparar comprimento de AS-PATH antes do MED, podendo mudar o best path", points: 12 },
+    q5: { type: "radio", correct: "MED afeta só o vizinho diretamente conectado; AS-Path Prepend é visível por todos os ASes no caminho", points: 16 },
+    q6: { type: "radio", correct: "bgp always-compare-med + bgp bestpath as-path ignore", points: 16 },
   },
 
   steps: [
@@ -275,8 +295,8 @@ ip route 150.4.4.0/24 Null0
 
 Uma sessão BGP é estabelecida via TCP na porta 179. Quando dois roteadores trocam mensagens OPEN e chegam ao estado ESTABLISHED, eles passam a trocar tabelas de rotas (UPDATEs). O estado da sessão é visível com o comando "show bgp summary".
 
-Neste lab, cada roteador representa um AS diferente. Antes de qualquer configuração de política, você precisa entender o estado atual da rede — quais sessões existem, quais prefixos estão sendo anunciados e qual caminho o BGP escolheu como melhor.`,
-      description: `A topologia tem 4 ASes (AS1=R1, AS2=R2, AS3=R3, AS4=R4).
+Neste lab, cada roteador representa um AS diferente, formando um anel: R1-R2-R3-R4-R1. Antes de qualquer configuração de política, você precisa entender o estado atual da rede — quais sessões existem, quais prefixos estão sendo anunciados e qual caminho o BGP escolheu como melhor.`,
+      description: `A topologia tem 4 ASes (AS1=R1, AS2=R2, AS3=R3, AS4=R4) em anel.
 R3 recebe o prefixo 150.1.1.0/24 por dois caminhos: via R2 (AS2→AS1) e via R4 (AS4→AS1).
 
 Execute os comandos abaixo e anote:
@@ -289,7 +309,7 @@ Execute os comandos abaixo e anote:
         { cmd: "show ip bgp", router: "R3", desc: "Tabela BGP de R3 — quais caminhos para 150.1.1.0?" },
         { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "Detalhe: quantos caminhos? Qual o AS-PATH de cada?" },
       ],
-      expected: "Todas as sessões em 'Established'. R3 vê 150.1.1.0/24 por dois caminhos com AS-PATH de mesmo comprimento.",
+      expected: "Todas as sessões em 'Established'. R3 vê 150.1.1.0/24 por dois caminhos (2 available) com AS-PATH de mesmo comprimento.",
     },
     {
       id: 2,
@@ -309,7 +329,7 @@ Execute os comandos abaixo e anote:
 Quando dois caminhos empatam em todos os critérios anteriores, o BGP usa o Router-ID do vizinho como desempate final — preferindo o menor valor numérico.`,
       description: `Observe a saída de 'show ip bgp 150.1.1.0/24' no R3.
 
-O símbolo *> indica o best path. Como ambos os caminhos têm AS-PATH de mesmo comprimento (2 hops), o BGP usa o Router-ID do vizinho como desempate — prefere o menor.
+Como ambos os caminhos têm AS-PATH de mesmo comprimento (2 hops), o BGP usa o Router-ID do vizinho como desempate — prefere o menor.
 
 Verifique qual vizinho tem o menor Router-ID:
 - Caminho via R2: next-hop 2.2.2.2
@@ -317,42 +337,13 @@ Verifique qual vizinho tem o menor Router-ID:
 
 Por enquanto, apenas observe e entenda o comportamento atual. Não configure nada ainda.`,
       commands: [
-        { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "Confirme: qual o Router-ID do vizinho preferido (*>)?" },
+        { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "Confirme: qual caminho é preferido (best)?" },
         { cmd: "show ip bgp 150.3.3.0/24", router: "R1", desc: "E no R1? Qual caminho é preferido para 150.3.3.0?" },
       ],
       expected: "R3 prefere 150.1.1.0 via next-hop com menor valor numérico (2.2.2.2 < 4.4.4.4).",
     },
     {
       id: 3,
-      title: "Configurar AS-Path Prepend",
-      theory: `O AS-Path Prepend é uma técnica de engenharia de tráfego de ENTRADA (inbound traffic engineering). Ao repetir o próprio ASN no AS-PATH dos anúncios de saída, o roteador faz aquele caminho parecer mais longo para os vizinhos externos — tornando-o menos preferido.
-
-É amplamente usado quando uma organização tem múltiplos uplinks para a internet e quer controlar por qual link o tráfego entra. Por exemplo, se um AS tem dois provedores (ISP-A e ISP-B) e quer receber tráfego principalmente pelo ISP-A, ele anuncia seus prefixos para o ISP-B com AS-PATH mais longo.
-
-Importante: o AS-Path Prepend afeta todos os ASes ao longo do caminho que receberem o anúncio — é uma sinalização global, não apenas para o vizinho direto.`,
-      description: `Objetivo: fazer R4 preferir o caminho via R3 (em vez de R1 diretamente) para prefixos do AS1.
-
-Sintaxe no FRR/vtysh:
-  configure terminal
-  route-map PREPEND_R4 permit 10
-   set as-path prepend {{prependArg}}
-  exit
-  router bgp 1
-   address-family ipv4 unicast
-    neighbor 4.4.4.4 route-map PREPEND_R4 out
-  exit
-
-Após configurar, aplique o soft-reset e verifique R4.`,
-      commands: [
-        { cmd: "show ip bgp 150.1.1.0/24", router: "R4", desc: "ANTES: anote o AS-PATH atual via R1 (1.1.1.1)" },
-        { cmd: "show running-config", router: "R1", desc: "Confirme que sua route-map foi criada" },
-        { cmd: "clear bgp * soft out", router: "R1", desc: "Aplica políticas de saída sem derrubar sessões" },
-        { cmd: "show ip bgp 150.1.1.0/24", router: "R4", desc: "DEPOIS: o AS-PATH via R1 está mais longo agora?" },
-      ],
-      expected: "R4 deve ver o AS-PATH via R1 mais longo, contendo a sequência '{{prependArg}}'. O caminho via R3 deve ser preferido (*>) por ser mais curto.",
-    },
-    {
-      id: 4,
       title: "Observar o MED — antes de configurar",
       theory: `O MED (Multi-Exit Discriminator) indica para o AS vizinho qual ponto de entrada preferir.
 Menor MED = mais preferido. É um atributo NÃO-TRANSITIVO (não é repassado além do AS vizinho direto).
@@ -365,22 +356,22 @@ Antes de configurar qualquer MED, observe o estado atual:`,
 
 O objetivo deste passo e perceber que o MED ainda nao esta influenciando a decisao. Execute os comandos e compare:
 - se aparece algum campo metric/MED;
-- qual caminho esta marcado com *>;
+- qual caminho esta marcado como best;
 - se o comportamento muda entre prefixos diferentes.
 
 Ainda nao configure nada aqui. Apenas registre o estado inicial para comparar depois.`,
       commands: [
-        { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "Há algum valor de 'metric' nos caminhos? Qual é o *>?" },
+        { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "Há algum valor de 'metric' nos caminhos? Qual é o best?" },
         { cmd: "show ip bgp 150.2.2.0/24", router: "R3", desc: "Mesmo padrão para outro prefixo" },
       ],
       expected: "MED deve aparecer como 0 ou ausente. R3 seleciona caminho por Router-ID, não por MED.",
       predict: {
-        id: "predict_step4",
+        id: "predict_med_before",
         prompt: "No próximo passo você vai configurar um MED baixo em R2 (via route-map) e um MED alto em R4 para o mesmo prefixo. Você espera que R3 mude de caminho IMEDIATAMENTE depois disso? Por quê?",
       },
     },
     {
-      id: 5,
+      id: 4,
       title: "Configurar MED em R2 e R4",
       theory: `Para anunciar um MED específico para um vizinho, usa-se uma route-map com o comando "set metric VALOR" aplicada na direção de saída (out) para o vizinho desejado.
 
@@ -425,10 +416,10 @@ Após configurar ambos, verifique R3 — o caminho preferido provavelmente NÃO 
         { cmd: "clear bgp * soft out", router: "R4", desc: "Aplica políticas no R4" },
         { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "Veja os valores de metric — o caminho preferido mudou?" },
       ],
-      expected: "R3 deve mostrar 'metric {{medPreferred}}' via R2 e 'metric {{medOther}}' via R4. Mas o best path (*>) provavelmente não mudou ainda.",
+      expected: "R3 deve mostrar 'metric {{medPreferred}}' via R2 e 'metric {{medOther}}' via R4. Mas o best path provavelmente não mudou ainda.",
     },
     {
-      id: 6,
+      id: 5,
       title: "Resolver os dois problemas do MED entre ASes",
       theory: `Dois comandos especiais do BGP modificam o comportamento padrão da seleção de melhor caminho:
 
@@ -451,10 +442,46 @@ Depois compare o resultado antes e depois.`,
         { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "DEPOIS: R3 agora prefere via R2 (metric mais baixo)?" },
         { cmd: "show ip bgp", router: "R3", desc: "Todos os prefixos preferem via R2 agora?" },
       ],
-      expected: "Após os dois comandos, R3 deve preferir (*>) todos os prefixos via R2 (next-hop 2.2.2.2, metric {{medPreferred}}).",
+      expected: "Após os dois comandos, R3 deve preferir (best) todos os prefixos via R2 (next-hop 2.2.2.2, metric {{medPreferred}}) — os dois caminhos ainda existem simultaneamente neste momento, então dá pra ver a comparação de MED acontecendo de verdade.",
       predict: {
-        id: "predict_step6",
+        id: "predict_med_resolve",
         prompt: "Depois de ativar 'bgp always-compare-med' e 'bgp bestpath as-path ignore' em R3, para qual vizinho você espera que TODOS os prefixos passem a preferir, e por quê?",
+      },
+    },
+    {
+      id: 6,
+      title: "Configurar AS-Path Prepend",
+      theory: `O AS-Path Prepend é uma técnica de engenharia de tráfego de ENTRADA (inbound traffic engineering). Ao repetir o próprio ASN no AS-PATH dos anúncios de saída, o roteador faz aquele caminho parecer mais longo para os vizinhos externos — tornando-o menos preferido.
+
+É amplamente usado quando uma organização tem múltiplos uplinks para a internet e quer controlar por qual link o tráfego entra. Por exemplo, se um AS tem dois provedores (ISP-A e ISP-B) e quer receber tráfego principalmente pelo ISP-A, ele anuncia seus prefixos para o ISP-B com AS-PATH mais longo.
+
+Importante: o AS-Path Prepend afeta todos os ASes ao longo do caminho que receberem o anúncio — é uma sinalização global, não apenas para o vizinho direto.
+
+Efeito colateral que você vai observar nesta topologia em anel: depois que R4 passar a preferir o caminho via R3 para 150.1.1.0/24, ele vai tentar reanunciar essa mesma rota de volta para R3 — mas o AS-PATH dela já contém "3" (o próprio AS de R3). Por prevenção de loop, R3 rejeita esse anúncio. Na prática, R3 deixa de ter dois caminhos concorrentes para 150.1.1.0/24: sobra só o caminho via R2, que você já garantiu ser o de menor MED no passo anterior.`,
+      description: `Objetivo: fazer R4 preferir o caminho via R3 (em vez de R1 diretamente) para prefixos do AS1.
+
+Sintaxe no FRR/vtysh:
+  configure terminal
+  route-map PREPEND_R4 permit 10
+   set as-path prepend {{prependArg}}
+  exit
+  router bgp 1
+   address-family ipv4 unicast
+    neighbor 4.4.4.4 route-map PREPEND_R4 out
+  exit
+
+Após configurar, aplique o soft-reset e verifique R4.`,
+      commands: [
+        { cmd: "show ip bgp 150.1.1.0/24", router: "R4", desc: "ANTES: anote o AS-PATH atual via R1 (1.1.1.1)" },
+        { cmd: "show running-config", router: "R1", desc: "Confirme que sua route-map foi criada" },
+        { cmd: "clear bgp * soft out", router: "R1", desc: "Aplica políticas de saída sem derrubar sessões" },
+        { cmd: "show ip bgp 150.1.1.0/24", router: "R4", desc: "DEPOIS: o AS-PATH via R1 está mais longo agora?" },
+        { cmd: "show ip bgp 150.1.1.0/24", router: "R3", desc: "R3 ainda mostra dois caminhos, ou só um agora?" },
+      ],
+      expected: "R4 deve ver o AS-PATH via R1 mais longo, contendo a sequência '{{prependArg}}', e passar a preferir o caminho via R3. Em R3, o caminho via R4 desaparece — só sobra o caminho via R2.",
+      predict: {
+        id: "predict_prepend_effect",
+        prompt: "Depois de aplicar esse prepend, você espera que R3 continue vendo os dois caminhos para 150.1.1.0/24 (via R2 e via R4), ou só um? Por quê?",
       },
     },
   ],
