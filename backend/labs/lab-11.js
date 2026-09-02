@@ -8,6 +8,7 @@
 const lab = {
   id: 11,
   protocol: "ospf",
+  level: 4,
   scenario: "Uma empresa cresceu de uma única sede para várias filiais, cada uma virando sua própria área OSPF. Cada filial pequena tem só um punhado de sub-redes locais, mas sem sumarização, CADA uma dessas sub-redes vira uma LSA Type-3 própria cruzando o backbone e sendo processada por todo roteador da rede — em uma empresa com dezenas de filiais, isso significa milhares de entradas desnecessárias no banco de dados de cada área. Sumarizar no ABR resolve isso sem perder conectividade.",
   title: "OSPF Multi-Área e Sumarização de Rotas",
   topic: "Área, ABR e Type-3 Summary LSA",

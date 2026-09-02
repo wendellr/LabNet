@@ -1365,6 +1365,7 @@ app.get('/api/labs', (req, res) => {
     title: l.title,
     topic: l.topic,
     protocol: l.protocol || 'bgp',
+    level: l.level ?? 1,
     difficulty: l.difficulty,
     duration: l.duration,
     routers: l.routers,

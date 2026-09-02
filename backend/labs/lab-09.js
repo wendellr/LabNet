@@ -6,6 +6,7 @@
 module.exports = {
   "id": 9,
   "protocol": "bgp",
+  "level": 6,
   "scenario": "Um AS grande, com dezenas de roteadores iBGP, não aguenta mais manter full-mesh — o mesmo problema de escalabilidade do Lab 4, resolvido de outra forma: Route Reflectors permitem que um roteador central reflita rotas para seus clientes, eliminando a necessidade de cada par de roteadores ter uma sessão direta entre si. Communities continuam sendo a ferramenta para aplicar políticas diferenciadas conforme a rota se propaga pela rede refletida.",
   "title": "Route Reflector e BGP Communities",
   "topic": "Escalabilidade iBGP e Políticas Avançadas",

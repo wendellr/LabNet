@@ -11,6 +11,7 @@
 module.exports = {
   id: 5,
   protocol: "bgp",
+  level: 4,
   scenario: "Sua empresa possui vários blocos de IP pequenos e contíguos (ex.: vários /24 vizinhos) e quer anunciar um único prefixo agregado para a internet, reduzindo o tamanho da tabela de rotas global e simplificando políticas de quem recebe o anúncio. Em paralelo, times de engenharia de tráfego às vezes precisam ignorar o comprimento do AS-PATH na decisão de melhor caminho — útil quando outros atributos (como MED) devem prevalecer sobre a heurística padrão.",
   enabled: true,
   title: "Bestpath AS-PATH Ignore e Aggregate Address",

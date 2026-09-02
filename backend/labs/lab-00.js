@@ -8,6 +8,7 @@
 const lab = {
   id: 0,
   protocol: "bgp",
+  level: 0,
   scenario: "Este lab não representa um cenário de rede real — é um tour guiado pela própria plataforma, pensado para o professor apresentar em aula antes da turma começar os labs de verdade. A sessão eBGP entre R1 e R2 é só um pano de fundo simples e rápido de convergir para você praticar a navegação entre as abas.",
   title: "Lab 0 — Bem-vindo ao LabNet",
   topic: "Como Usar a Plataforma",

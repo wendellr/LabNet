@@ -1,14 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { apiFetch, TEACHER_TOKEN_KEY } from "../hooks/index.js";
 import { LABS_META, AVAILABLE_LAB_IDS, DIFF_STYLE } from "../data/labs.js";
 import { Badge } from "./UI.jsx";
 
+// Ordem da escala evolutiva: OSPF (fundamentos → avançado) → BGP (fundamentos → avançado) → OSPF+BGP (integração)
 const PROTOCOL_FILTERS = [
   { key: "all", label: "Todos" },
-  { key: "bgp", label: "BGP" },
   { key: "ospf", label: "OSPF" },
+  { key: "bgp", label: "BGP" },
   { key: "bgp+ospf", label: "BGP + OSPF" },
 ];
+
+const TRACK_LABEL = {
+  ospf: "🟢 OSPF — do básico ao avançado",
+  bgp: "🔵 BGP — do básico ao avançado",
+  "bgp+ospf": "🟣 OSPF + BGP — integração",
+};
 
 export function SessionGate({ onSession, onTeacher, resumable, onResume, onForgetResumable, onResumeByLookup }) {
   const [name, setName]           = useState("");
@@ -84,9 +91,18 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
   const allLabs = apiLabs?.length
     ? apiLabs
     : LABS_META.filter((l) => AVAILABLE_LAB_IDS.includes(l.id));
-  const availableLabs = protocolFilter === "all"
+  // Escala evolutiva: OSPF (fundamentos → avançado) → BGP (fundamentos → avançado) → OSPF+BGP (integração)
+  const PROTOCOL_ORDER = { ospf: 0, bgp: 1, "bgp+ospf": 2 };
+  const availableLabs = (protocolFilter === "all"
     ? allLabs
-    : allLabs.filter((lab) => (lab.protocol || "bgp") === protocolFilter);
+    : allLabs.filter((lab) => (lab.protocol || "bgp") === protocolFilter))
+    .slice()
+    .sort((a, b) => {
+      const pa = PROTOCOL_ORDER[a.protocol || "bgp"] ?? 9;
+      const pb = PROTOCOL_ORDER[b.protocol || "bgp"] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return (a.level ?? 1) - (b.level ?? 1);
+    });
   const selectedLab = availableLabs.find((lab) => lab.id === labId) || availableLabs[0];
   const selectedStyle = DIFF_STYLE[selectedLab?.difficulty] || DIFF_STYLE.Iniciante;
 
@@ -334,34 +350,44 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
                   })}
                 </div>
                 <div className="lab-picker-grid">
-                  {availableLabs.map((lab) => {
+                  {availableLabs.map((lab, i) => {
                     const ds = DIFF_STYLE[lab.difficulty] || DIFF_STYLE.Iniciante;
                     const sel = labId === lab.id;
+                    const prevProtocol = i > 0 ? (availableLabs[i - 1].protocol || "bgp") : null;
+                    const curProtocol = lab.protocol || "bgp";
+                    const showTrackLabel = protocolFilter === "all" && curProtocol !== prevProtocol;
                     return (
-                      <button key={lab.id} type="button" onClick={() => setLabId(lab.id)}
-                        style={{
-                          minHeight: 96,
-                          textAlign: "left",
-                          padding: 12,
-                          background: sel ? "#0d1f3c" : "#020817",
-                          border: `1px solid ${sel ? "#0ea5e9" : "#1e293b"}`,
-                          borderRadius: 8,
-                          cursor: "pointer",
-                          transition: "all .15s",
-                          boxShadow: sel ? "0 0 0 1px rgba(14,165,233,.25)" : "none",
-                        }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                          <span style={{ color: sel ? "#67e8f9" : "#60a5fa", fontSize: 12, fontWeight: 800 }}>Lab {lab.id}</span>
-                          <span style={{ width: 9, height: 9, borderRadius: "50%", background: sel ? "#22d3ee" : "#1e293b", flexShrink: 0 }} />
-                        </div>
-                        <div style={{ color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 12, lineHeight: 1.3, fontWeight: 700, minHeight: 32 }}>
-                          {lab.title}
-                        </div>
-                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9 }}>
-                          <Badge style={{ background: ds.bg, color: ds.color, border: `1px solid ${ds.border}` }}>{lab.difficulty}</Badge>
-                          <Badge style={{ background: "#0a0f1a", color: "#64748b", border: "1px solid #1e293b" }}>{lab.duration}</Badge>
-                        </div>
-                      </button>
+                      <Fragment key={lab.id}>
+                        {showTrackLabel && (
+                          <div key={`track-${curProtocol}`} style={{ gridColumn: "1 / -1", color: "#475569", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginTop: i === 0 ? 0 : 6, paddingBottom: 2, borderBottom: "1px solid #1e293b" }}>
+                            {TRACK_LABEL[curProtocol] || curProtocol}
+                          </div>
+                        )}
+                        <button key={lab.id} type="button" onClick={() => setLabId(lab.id)}
+                          style={{
+                            minHeight: 96,
+                            textAlign: "left",
+                            padding: 12,
+                            background: sel ? "#0d1f3c" : "#020817",
+                            border: `1px solid ${sel ? "#0ea5e9" : "#1e293b"}`,
+                            borderRadius: 8,
+                            cursor: "pointer",
+                            transition: "all .15s",
+                            boxShadow: sel ? "0 0 0 1px rgba(14,165,233,.25)" : "none",
+                          }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                            <span style={{ color: sel ? "#67e8f9" : "#60a5fa", fontSize: 12, fontWeight: 800 }}>Lab {lab.id}</span>
+                            {lab.level > 0 && <Badge style={{ background: "#1e1b4b", color: "#a78bfa", border: "1px solid #3730a3" }}>Nível {lab.level}</Badge>}
+                          </div>
+                          <div style={{ color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 12, lineHeight: 1.3, fontWeight: 700, minHeight: 32 }}>
+                            {lab.title}
+                          </div>
+                          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9 }}>
+                            <Badge style={{ background: ds.bg, color: ds.color, border: `1px solid ${ds.border}` }}>{lab.difficulty}</Badge>
+                            <Badge style={{ background: "#0a0f1a", color: "#64748b", border: "1px solid #1e293b" }}>{lab.duration}</Badge>
+                          </div>
+                        </button>
+                      </Fragment>
                     );
                   })}
                 </div>

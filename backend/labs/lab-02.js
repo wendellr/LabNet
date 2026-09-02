@@ -1,12 +1,17 @@
 /**
- * Lab 2 — BGP Local Preference
+ * Lab 2 — BGP Local Preference (BGP Nível 2)
  * Topic: Controle de Tráfego de Saída
  * Difficulty: Iniciante
+ *
+ * Redesenhado: variables (valor de Local Preference do roteiro e do
+ * desafio) impedem cópia literal entre alunos; predict nos dois pontos
+ * onde o aluno precisa prever propagação via iBGP antes de confirmar.
  */
 
 const lab = {
   "id": 2,
   "protocol": "bgp",
+  "level": 2,
   "scenario": "Sua empresa tem duas saídas externas para o mesmo destino remoto, uma mais barata/estável que a outra. O time de rede precisa garantir que TODOS os roteadores internos concordem em preferir a mesma saída — não adianta cada um decidir sozinho. Local Preference resolve exatamente isso: é propagado por iBGP dentro do AS, então uma decisão tomada em um único roteador de borda vira consenso para toda a rede interna.",
   "title": "BGP Local Preference",
   "topic": "Controle de Tráfego de Saída",
@@ -14,52 +19,24 @@ const lab = {
   "duration": "40 min",
   "enabled": true,
   "resourceProfile": "leve",
-  "routers": [
-    "R1",
-    "R2",
-    "R3",
-    "R4"
-  ],
+  "routers": ["R1", "R2", "R3", "R4"],
   "links": [
-    [
-      "R1",
-      "eth1",
-      "R2",
-      "eth1"
-    ],
-    [
-      "R1",
-      "eth2",
-      "R3",
-      "eth1"
-    ],
-    [
-      "R2",
-      "eth2",
-      "R4",
-      "eth1"
-    ]
+    ["R1", "eth1", "R2", "eth1"],
+    ["R1", "eth2", "R3", "eth1"],
+    ["R2", "eth2", "R4", "eth1"]
   ],
+
+  "variables": {
+    "lpRoteiro": { "pool": ["150", "180", "200", "220"] },
+    "lpChallenge": { "pool": ["230", "250", "270", "300"] }
+  },
+
   "autoGrade": [
-    {
-      "id": "ibgp_up",
-      "label": "iBGP estabelecido (R1-R2)",
-      "cmdContains": "show bgp summary",
-      "outputContains": "Established"
-    },
-    {
-      "id": "localpref_configured",
-      "label": "Local Preference configurado",
-      "cmdContains": "show running-config",
-      "outputContains": "local-preference"
-    },
-    {
-      "id": "localpref_200",
-      "label": "Local Preference = 200",
-      "cmdContains": "show ip bgp",
-      "outputContains": "200"
-    }
+    { "id": "ibgp_up", "label": "iBGP estabelecido (R1-R2)", "cmdContains": "show bgp summary", "outputContains": "Established" },
+    { "id": "localpref_configured", "label": "Local Preference configurado", "cmdContains": "show running-config", "outputContains": "local-preference" },
+    { "id": "localpref_roteiro", "label": "Local Preference do roteiro aplicado", "cmdContains": "show ip bgp", "outputContains": "{{lpRoteiro}}" }
   ],
+
   "verifications": [
     {
       "id": "bgp_established",
@@ -69,9 +46,9 @@ const lab = {
     },
     {
       "id": "localpref_configured",
-      "label": "Route-map de desafio com Local Preference 250 configurada em R1",
+      "label": "Route-map de desafio com Local Preference configurada em R1",
       "weight": 25,
-      "check": { "router": "R1", "cmdPattern": "show running-config", "outputPattern": "set local-preference 250" }
+      "check": { "router": "R1", "cmdPattern": "show running-config", "outputPattern": "set local-preference {{lpChallenge}}" }
     },
     {
       "id": "localpref_applied_in",
@@ -81,49 +58,41 @@ const lab = {
     },
     {
       "id": "localpref_visible",
-      "label": "Local Preference 250 observado em R2 via iBGP",
+      "label": "Local Preference do desafio observado em R2 via iBGP",
       "weight": 25,
-      "check": { "router": "R2", "cmdPattern": "show ip bgp", "outputPattern": "250" }
+      "check": { "router": "R2", "cmdPattern": "show ip bgp", "outputPattern": "{{lpChallenge}}" }
     },
     {
       "id": "r1_prefix_verified",
-      "label": "R1 marcou a rota 20.20.0.0/24 com Local Preference 250",
+      "label": "R1 marcou a rota 20.20.0.0/24 com o Local Preference do desafio",
       "weight": 15,
-      "check": { "router": "R1", "cmdPattern": "show ip bgp 20\\.20\\.0\\.0", "outputPattern": "250" }
+      "check": { "router": "R1", "cmdPattern": "show ip bgp 20\\.20\\.0\\.0", "outputPattern": "{{lpChallenge}}" }
     }
   ],
+
   "answerKey": {
-    "q1": {
-      "type": "radio",
-      "correct": "100",
-      "points": 10
+    "predict_step2": {
+      "type": "keywords",
+      "required": ["sim", "propaga", "ibgp", "consenso"],
+      "anyOf": true,
+      "points": 8,
+      "hint": "Local Preference é propagado via iBGP — R1 recebe o valor de R2 automaticamente, sem precisar configurar nada nele."
     },
-    "q2": {
-      "type": "radio",
-      "correct": "Porque é propagado apenas via iBGP dentro do AS, influenciando qual saída todos os roteadores internos preferem",
-      "points": 20
+    "predict_step3": {
+      "type": "keywords",
+      "required": ["não", "nao", "local", "não propaga", "nao propaga"],
+      "anyOf": true,
+      "points": 7,
+      "hint": "Weight é local ao roteador onde foi configurado — nunca é anunciado para nenhum vizinho, nem iBGP."
     },
-    "q3": {
-      "type": "radio",
-      "correct": "R2 deve preferir o caminho via R1 para 20.20.0.0/24, porque recebeu Local Preference 250 propagado por iBGP",
-      "points": 20
-    },
-    "q4": {
-      "type": "radio",
-      "correct": "Local Preference é propagado via iBGP dentro do AS; Weight é local apenas ao roteador onde foi configurado",
-      "points": 20
-    },
-    "q5": {
-      "type": "radio",
-      "correct": "Weight",
-      "points": 15
-    },
-    "q6": {
-      "type": "radio",
-      "correct": "clear bgp * soft in",
-      "points": 15
-    }
+    "q1": { "type": "radio", "correct": "100", "points": 10 },
+    "q2": { "type": "radio", "correct": "Porque é propagado apenas via iBGP dentro do AS, influenciando qual saída todos os roteadores internos preferem", "points": 15 },
+    "q3": { "type": "radio", "correct": "R2 deve preferir o caminho via R1 para 20.20.0.0/24, porque recebeu Local Preference propagado por iBGP", "points": 15 },
+    "q4": { "type": "radio", "correct": "Local Preference é propagado via iBGP dentro do AS; Weight é local apenas ao roteador onde foi configurado", "points": 15 },
+    "q5": { "type": "radio", "correct": "Weight", "points": 10 },
+    "q6": { "type": "radio", "correct": "clear bgp * soft in", "points": 10 }
   },
+
   "steps": [
     {
       "id": 1,
@@ -131,57 +100,29 @@ const lab = {
       "theory": "Local Preference e um atributo usado dentro de um AS para controlar por qual saida o trafego deve sair. Maior Local Preference vence. Diferente do AS-PATH Prepend, que tenta influenciar ASes externos, Local Preference e uma decisao interna: os roteadores do mesmo AS recebem esse valor via iBGP e passam a concordar sobre a melhor saida.\n\nNeste lab, R1 e R2 pertencem ao AS1 e formam iBGP. R1 tambem tem uma saida eBGP para o AS3, enquanto R2 tem uma saida eBGP para o AS2. Antes de alterar politica, veja quais rotas cada roteador aprende e qual caminho fica preferido.",
       "description": "Verifique sessoes iBGP (R1-R2 no AS1) e eBGP (R1-AS3, R2-AS2). Observe a tabela BGP antes de configurar qualquer politica.",
       "commands": [
-        {
-          "cmd": "show bgp summary",
-          "router": "R1",
-          "desc": "Sessões no R1"
-        },
-        {
-          "cmd": "show bgp summary",
-          "router": "R2",
-          "desc": "Sessões no R2"
-        },
-        {
-          "cmd": "show ip bgp",
-          "router": "R1",
-          "desc": "Tabela BGP R1"
-        },
-        {
-          "cmd": "show ip bgp",
-          "router": "R2",
-          "desc": "Tabela BGP R2"
-        }
+        { "cmd": "show bgp summary", "router": "R1", "desc": "Sessões no R1" },
+        { "cmd": "show bgp summary", "router": "R2", "desc": "Sessões no R2" },
+        { "cmd": "show ip bgp", "router": "R1", "desc": "Tabela BGP R1" },
+        { "cmd": "show ip bgp", "router": "R2", "desc": "Tabela BGP R2" }
       ],
       "expected": "R1 e R2 devem ter iBGP estabelecido entre si e eBGP estabelecido com seus ASes externos."
     },
     {
       "id": 2,
       "title": "Configurar Local Preference",
-      "theory": "Para alterar Local Preference em rotas recebidas de um vizinho, usamos route-map na direcao de entrada (in). A route-map pode ter match opcional. Quando nao ha match, ela se aplica a todas as rotas daquele vizinho.\n\nO comando chave e \"set local-preference 200\". Como 200 e maior que o padrao 100, as rotas recebidas por esse vizinho passam a ser mais atraentes dentro do AS1.\n\nApos aplicar a route-map inbound, use \"clear bgp * soft in\" para reaplicar a politica nas rotas recebidas sem derrubar sessoes BGP.",
-      "description": "Configure R2 para definir Local Preference=200 nas rotas recebidas do AS2 pelo vizinho 30.0.0.1.\n\nExemplo em R2:\n  configure terminal\n  route-map SET_LP_AS2 permit 10\n   set local-preference 200\n  exit\n  router bgp 1\n   address-family ipv4 unicast\n    neighbor 30.0.0.1 route-map SET_LP_AS2 in\n  end\n  clear bgp * soft in\n\nDepois verifique em R1 e R2 se o valor 200 aparece nas rotas aprendidas do AS2.",
+      "theory": "Para alterar Local Preference em rotas recebidas de um vizinho, usamos route-map na direcao de entrada (in). A route-map pode ter match opcional. Quando nao ha match, ela se aplica a todas as rotas daquele vizinho.\n\nO comando chave e \"set local-preference VALOR\". Como o valor configurado e maior que o padrao 100, as rotas recebidas por esse vizinho passam a ser mais atraentes dentro do AS1.\n\nApos aplicar a route-map inbound, use \"clear bgp * soft in\" para reaplicar a politica nas rotas recebidas sem derrubar sessoes BGP.",
+      "description": "Configure R2 para definir Local Preference={{lpRoteiro}} nas rotas recebidas do AS2 pelo vizinho 30.0.0.1.\n\nExemplo em R2:\n  configure terminal\n  route-map SET_LP_AS2 permit 10\n   set local-preference {{lpRoteiro}}\n  exit\n  router bgp 1\n   address-family ipv4 unicast\n    neighbor 30.0.0.1 route-map SET_LP_AS2 in\n  end\n  clear bgp * soft in\n\nDepois verifique em R1 e R2 se o valor {{lpRoteiro}} aparece nas rotas aprendidas do AS2.",
       "commands": [
-        {
-          "cmd": "show running-config",
-          "router": "R2",
-          "desc": "Confirme route-map e aplicação inbound"
-        },
-        {
-          "cmd": "clear bgp * soft in",
-          "router": "R2",
-          "desc": "Aplica política"
-        },
-        {
-          "cmd": "show ip bgp",
-          "router": "R1",
-          "desc": "R1 deve ver Local Preference 200 propagado via iBGP"
-        },
-        {
-          "cmd": "show ip bgp",
-          "router": "R2",
-          "desc": "R2 deve marcar as rotas recebidas de AS2 com Local Preference 200"
-        }
+        { "cmd": "show running-config", "router": "R2", "desc": "Confirme route-map e aplicação inbound" },
+        { "cmd": "clear bgp * soft in", "router": "R2", "desc": "Aplica política" },
+        { "cmd": "show ip bgp", "router": "R1", "desc": "R1 deve ver Local Preference {{lpRoteiro}} propagado via iBGP" },
+        { "cmd": "show ip bgp", "router": "R2", "desc": "R2 deve marcar as rotas recebidas de AS2 com Local Preference {{lpRoteiro}}" }
       ],
-      "expected": "R1 mostra Local Preference=200 para rotas de AS2 via R2"
+      "expected": "R1 mostra Local Preference={{lpRoteiro}} para rotas de AS2 via R2",
+      "predict": {
+        "id": "predict_step2",
+        "prompt": "Antes de aplicar a política em R2, você espera que R1 passe a preferir as rotas vindas do AS2 também, mesmo sem configurar nada em R1? Por quê?"
+      }
     },
     {
       "id": 3,
@@ -189,28 +130,20 @@ const lab = {
       "theory": "Weight e Local Preference parecem parecidos, mas tem escopos diferentes.\n\nWeight e local ao roteador onde foi configurado e nao e anunciado para nenhum vizinho. Local Preference e propagado por iBGP dentro do AS. Por isso, Local Preference e melhor para fazer todos os roteadores de um AS preferirem a mesma saida.\n\nNa ordem de decisao BGP, Weight vem antes de Local Preference. Mas, por ser local, Weight nao resolve sozinho uma politica de saida para todo o AS.",
       "description": "Compare a tabela BGP de R1 e R2 depois da politica. O objetivo e perceber que o atributo configurado em R2 influencia a decisao de R1 porque foi carregado pelo iBGP.",
       "commands": [
-        {
-          "cmd": "show ip bgp",
-          "router": "R1",
-          "desc": "Observe Local Preference recebido via iBGP"
-        },
-        {
-          "cmd": "show ip bgp",
-          "router": "R2",
-          "desc": "Compare com a tabela local de R2"
-        },
-        {
-          "cmd": "show running-config",
-          "router": "R2",
-          "desc": "Releia a policy aplicada inbound"
-        }
+        { "cmd": "show ip bgp", "router": "R1", "desc": "Observe Local Preference recebido via iBGP" },
+        { "cmd": "show ip bgp", "router": "R2", "desc": "Compare com a tabela local de R2" },
+        { "cmd": "show running-config", "router": "R2", "desc": "Releia a policy aplicada inbound" }
       ],
-      "expected": "A politica de Local Preference deve ser visivel dentro do AS1, enquanto Weight seria apenas local ao roteador configurado."
+      "expected": "A politica de Local Preference deve ser visivel dentro do AS1, enquanto Weight seria apenas local ao roteador configurado.",
+      "predict": {
+        "id": "predict_step3",
+        "prompt": "Se em vez de Local Preference você tivesse configurado Weight em R2 para as mesmas rotas, R1 também passaria a preferir esse caminho? Por quê?"
+      }
     }
   ],
   "challenge": {
     "title": "Desafio: Política de Saída Assimétrica",
-    "description": "Objetivo: aplique o mesmo conceito do roteiro, mas agora no outro lado do AS1.\n\nNo roteiro, você configurou R2 para marcar rotas recebidas do AS2 com Local Preference 200. No desafio, faça uma política complementar:\n\n- A rede 20.20.0.0/24 é originada pelo R3/AS3.\n- R1 é o roteador do AS1 que recebe essa rota pelo vizinho eBGP 20.0.0.1.\n- R2 deve enxergar essa rota via iBGP com Local Preference 250.\n\nTarefa prática:\n1. Em R1, crie uma route-map que aplique Local Preference 250.\n2. Aplique essa route-map inbound no vizinho eBGP 20.0.0.1.\n3. Execute clear bgp * soft in em R1 para reaplicar a política sem derrubar sessões.\n4. Verifique em R1 e R2 com show ip bgp 20.20.0.0/24.\n\nResultado esperado: R1 marca as rotas recebidas do AS3 com Local Preference 250, e R2 enxerga esse atributo via iBGP para a rota 20.20.0.0/24.",
+    "description": "Objetivo: aplique o mesmo conceito do roteiro, mas agora no outro lado do AS1.\n\nNo roteiro, você configurou R2 para marcar rotas recebidas do AS2 com Local Preference {{lpRoteiro}}. No desafio, faça uma política complementar:\n\n- A rede 20.20.0.0/24 é originada pelo R3/AS3.\n- R1 é o roteador do AS1 que recebe essa rota pelo vizinho eBGP 20.0.0.1.\n- R2 deve enxergar essa rota via iBGP com Local Preference {{lpChallenge}}.\n\nTarefa prática:\n1. Em R1, crie uma route-map que aplique Local Preference {{lpChallenge}}.\n2. Aplique essa route-map inbound no vizinho eBGP 20.0.0.1.\n3. Execute clear bgp * soft in em R1 para reaplicar a política sem derrubar sessões.\n4. Verifique em R1 e R2 com show ip bgp 20.20.0.0/24.\n\nResultado esperado: R1 marca as rotas recebidas do AS3 com Local Preference {{lpChallenge}}, e R2 enxerga esse atributo via iBGP para a rota 20.20.0.0/24.",
     "hints": [
       "Local Preference é propagado pelo iBGP dentro do AS",
       "A política deve ser inbound no roteador que recebe a rota externa",
@@ -221,12 +154,7 @@ const lab = {
         "id": "q1",
         "type": "radio",
         "text": "Qual o valor padrão de Local Preference no BGP?",
-        "options": [
-          "0",
-          "200",
-          "100",
-          "1000"
-        ]
+        "options": ["0", "200", "100", "1000"]
       },
       {
         "id": "q2",
@@ -242,9 +170,9 @@ const lab = {
       {
         "id": "q3",
         "type": "radio",
-        "text": "Depois de aplicar Local Preference 250 em R1 para rotas recebidas do AS3, o que R2 deve preferir para chegar em 20.20.0.0/24?",
+        "text": "Depois de aplicar Local Preference {{lpChallenge}} em R1 para rotas recebidas do AS3, o que R2 deve preferir para chegar em 20.20.0.0/24?",
         "options": [
-          "R2 deve preferir o caminho via R1 para 20.20.0.0/24, porque recebeu Local Preference 250 propagado por iBGP",
+          "R2 deve preferir o caminho via R1 para 20.20.0.0/24, porque recebeu Local Preference propagado por iBGP",
           "Nenhum caminho — Local Preference não é propagado para iBGP peers",
           "R2 deve preferir R4, porque eBGP sempre vence iBGP",
           "Depende do AS-PATH, que tem prioridade sobre Local Preference"
@@ -265,23 +193,13 @@ const lab = {
         "id": "q5",
         "type": "radio",
         "text": "Na ordem de decisão BGP, qual atributo tem MAIOR prioridade?",
-        "options": [
-          "Weight",
-          "Local Preference",
-          "AS-PATH",
-          "MED"
-        ]
+        "options": ["Weight", "Local Preference", "AS-PATH", "MED"]
       },
       {
         "id": "q6",
         "type": "radio",
-        "text": "Após configurar Local Preference 250 via route-map no R1, qual comando aplica a política sem derrubar sessões?",
-        "options": [
-          "clear bgp * hard",
-          "clear bgp * soft out",
-          "clear bgp * soft in",
-          "reload bgp"
-        ]
+        "text": "Após configurar Local Preference via route-map no R1, qual comando aplica a política sem derrubar sessões?",
+        "options": ["clear bgp * hard", "clear bgp * soft out", "clear bgp * soft in", "reload bgp"]
       }
     ]
   }

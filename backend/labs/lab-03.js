@@ -11,6 +11,7 @@
 module.exports = {
   id: 3,
   protocol: "bgp",
+  level: 3,
   scenario: "Um roteador de borda específico precisa preferir um caminho só para si mesmo, sem afetar o resto do AS — diferente de Local Preference, que é consenso de toda a rede interna. Weight resolve isso: é local ao roteador, nunca é anunciado a ninguém. Combinado com ORIGIN (que distingue rotas geradas internamente de rotas redistribuídas) e Confederação (que organiza um AS grande em sub-ASes sem expor essa divisão para fora), o time de rede ganha controle fino sobre decisões de caminho em pontos específicos da topologia.",
   enabled: true,
   title: "BGP Path Control",

@@ -7,6 +7,7 @@
 const lab = {
   id: 10,
   protocol: "ospf",
+  level: 2,
   scenario: "O time de operações reporta que, depois de uma manutenção de madrugada, um roteador 'sumiu' do IGP — outros roteadores diretamente conectados a ele não conseguem mais trocar rotas, sem nenhum alarme óbvio disparando. Esse é um dos erros mais comuns e mais silenciosos em OSPF: um técnico digitou a área errada numa interface durante a manutenção. Depois de corrigir, o time de engenharia de tráfego também precisa garantir que o caminho mais barato/rápido entre dois links redundantes seja o preferido — daí o desafio de custo OSPF.",
   title: "OSPF — Diagnóstico de Falha de Adjacência e Seleção de Caminho",
   topic: "Área OSPF, Adjacências e Custo",

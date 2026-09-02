@@ -11,6 +11,7 @@
 module.exports = {
   id: 7,
   protocol: "bgp+ospf",
+  level: 1,
   scenario: "Duas filiais de uma mesma empresa têm um link interno próprio (via OSPF) além da conexão via internet/BGP entre elas. Por padrão, BGP venceria pela distância administrativa menor, mesmo o link interno sendo mais barato e confiável — desperdiçando banda paga de trânsito para tráfego que poderia ficar 100% dentro da rede da empresa. BGP Backdoor resolve isso, fazendo o roteador preferir o caminho IGP interno sempre que ele estiver disponível.",
   enabled: true,
   title: "BGP Backdoor e AS-Path Prepend",

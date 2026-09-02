@@ -8,6 +8,7 @@
 const lab = {
   id: 12,
   protocol: "ospf",
+  level: 5,
   scenario: "Uma filial pequena, conectada por um link mais fraco e com um roteador de baixo custo, não precisa (e mal aguenta) manter um banco de dados com cada rota externa da internet que a matriz redistribui no OSPF — ela só precisa de UM jeito de sair. Área stub existe exatamente para esse cenário: simplifica drasticamente o que a filial precisa processar, sem cortar sua conectividade com o resto do mundo.",
   title: "OSPF Área Stub — Escopo de Flooding de LSA Type-5",
   topic: "Área Stub, ASBR e Rota Default Automática",

@@ -11,6 +11,7 @@
 module.exports = {
   id: 6,
   protocol: "bgp",
+  level: 5,
   scenario: "Um provedor de trânsito atende clientes com necessidades de política diferentes — alguns não podem ter suas rotas reanunciadas para terceiros (community no-export), outros precisam que um caminho de backup seja usado só em último caso (AS-Path Prepend). Para simplificar a tabela de roteamento de clientes menores que não precisam da tabela completa da internet, o provedor injeta uma rota default em vez de dezenas de milhares de rotas específicas.",
   enabled: true,
   title: "Community, AS-Path Prepend e Default Route",
