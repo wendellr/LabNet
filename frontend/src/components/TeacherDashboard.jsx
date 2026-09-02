@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { apiFetch } from "../hooks/index.js";
+import { apiFetch, TEACHER_TOKEN_KEY } from "../hooks/index.js";
 import { useWebSocket, useToasts, useDashboard } from "../hooks/index.js";
 import { Badge, Card, CopyButton, Toasts, CapacityBar, StatusBadge } from "./UI.jsx";
 import { LABS_META } from "../data/labs.js";
@@ -147,7 +147,15 @@ function SessionDetail({ session, onClose }) {
 
 // ─── TeacherDashboard ─────────────────────────────────────────────────────
 export function TeacherDashboard({ onExit }) {
-  const [snapshot, setSnapshot] = useDashboard();
+  const handleLogout = useCallback(() => {
+    apiFetch("POST", "/auth/logout").catch(() => {});
+    localStorage.removeItem(TEACHER_TOKEN_KEY);
+    onExit();
+  }, [onExit]);
+
+  const [snapshot, setSnapshot] = useDashboard((e) => {
+    if (e.status === 401) handleLogout();
+  });
   const [events, setEvents]     = useState([]);
   const [selected, setSelected] = useState(null);
   const [view, setView]         = useState("overview");
@@ -239,7 +247,7 @@ export function TeacherDashboard({ onExit }) {
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
           <CapacityBar active={active.length} max={capacity} />
-          <button onClick={onExit} style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>← Sair</button>
+          <button onClick={handleLogout} style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>← Sair</button>
         </div>
       </div>
 

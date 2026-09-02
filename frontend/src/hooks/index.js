@@ -6,10 +6,16 @@ export const API_BASE =
     ? ""
     : "http://localhost:3000";
 
+export const TEACHER_TOKEN_KEY = "labnet_teacher_token";
+
 export async function apiFetch(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  const teacherToken = localStorage.getItem(TEACHER_TOKEN_KEY);
+  if (teacherToken) headers.Authorization = `Bearer ${teacherToken}`;
+
   const res = await fetch(`${API_BASE}/api${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -50,7 +56,8 @@ export function useWebSocket(role, sessionId, onMessage) {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "auth", role, sessionId }));
+      const token = role === "teacher" ? localStorage.getItem(TEACHER_TOKEN_KEY) : undefined;
+      ws.send(JSON.stringify({ type: "auth", role, sessionId, token }));
       const hb = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN)
           ws.send(JSON.stringify({ type: "ping" }));
@@ -120,16 +127,16 @@ export function useSession(sessionId) {
 }
 
 // ─── useDashboard (teacher) ───────────────────────────────────────────────
-export function useDashboard() {
+export function useDashboard(onError) {
   const [snapshot, setSnapshot] = useState(null);
 
   useEffect(() => {
     const load = () =>
-      apiFetch("GET", "/admin/dashboard").then(setSnapshot).catch(() => {});
+      apiFetch("GET", "/admin/dashboard").then(setSnapshot).catch((e) => onError?.(e));
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, []);
+  }, []); // eslint-disable-line
 
   return [snapshot, setSnapshot];
 }

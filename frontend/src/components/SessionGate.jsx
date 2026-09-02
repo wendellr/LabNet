@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch } from "../hooks/index.js";
+import { apiFetch, TEACHER_TOKEN_KEY } from "../hooks/index.js";
 import { LABS_META, AVAILABLE_LAB_IDS, DIFF_STYLE } from "../data/labs.js";
 import { Badge } from "./UI.jsx";
 
@@ -120,7 +120,10 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
     setError(null);
     try {
       const res = await apiFetch("POST", "/auth/teacher", { password: teacherPw });
-      if (res.ok) onTeacher();
+      if (res.ok) {
+        localStorage.setItem(TEACHER_TOKEN_KEY, res.token);
+        onTeacher();
+      }
     } catch (e) {
       setError(e.message || "Senha incorreta");
     } finally {

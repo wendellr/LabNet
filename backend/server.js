@@ -62,6 +62,16 @@ const CONFIG = {
 const sessions = new Map();     // sessionId -> Session
 const wsClients = new Map();    // ws -> { sessionId, role }
 let eventLog = [];              // log global de eventos
+const teacherTokens = new Set(); // tokens de professor válidos (em memória, some no restart)
+
+function requireTeacher(req, res, next) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token || !teacherTokens.has(token)) {
+    return res.status(401).json({ error: 'Autenticação de professor necessária' });
+  }
+  next();
+}
 
 // ─── Modelos ───────────────────────────────────────────────────────────────
 function createSession(studentName, labId, sessionId = null, matricula = '') {
@@ -1263,18 +1273,18 @@ app.get('/api/session/:id/history', (req, res) => {
 });
 
 // Dashboard do professor — todas as sessões
-app.get('/api/admin/dashboard', (req, res) => {
+app.get('/api/admin/dashboard', requireTeacher, (req, res) => {
   res.json(getDashboardSnapshot());
 });
 
 // Histórico completo de notas (persistente) — para o painel "Notas" do professor
-app.get('/api/admin/grades', async (req, res) => {
+app.get('/api/admin/grades', requireTeacher, async (req, res) => {
   const records = await readGradeRecords();
   res.json({ records });
 });
 
 // Forçar cleanup de uma sessão
-app.delete('/api/admin/session/:id', async (req, res) => {
+app.delete('/api/admin/session/:id', requireTeacher, async (req, res) => {
   const s = sessions.get(req.params.id);
   if (!s) return res.status(404).json({ error: 'Sessão não encontrada' });
   logEvent('manual_cleanup', { sessionId: s.id, by: 'teacher' });
@@ -1283,7 +1293,7 @@ app.delete('/api/admin/session/:id', async (req, res) => {
 });
 
 // Broadcast de mensagem do professor para aluno(s)
-app.post('/api/admin/message', (req, res) => {
+app.post('/api/admin/message', requireTeacher, (req, res) => {
   const { sessionId, message, level = 'info' } = req.body;
   broadcast({ type: 'notification', level, message, fromTeacher: true }, 'all', sessionId || undefined);
   logEvent('teacher_message', { to: sessionId || 'all', message });
@@ -1291,7 +1301,7 @@ app.post('/api/admin/message', (req, res) => {
 });
 
 // Log de eventos para professor
-app.get('/api/admin/events', (req, res) => {
+app.get('/api/admin/events', requireTeacher, (req, res) => {
   const limit = parseInt(req.query.limit || '100');
   res.json({ events: eventLog.slice(-limit) });
 });
@@ -1331,10 +1341,19 @@ const TEACHER_PASSWORD = process.env.TEACHER_PASSWORD || 'bgp@teach2025';
 app.post('/api/auth/teacher', (req, res) => {
   const { password } = req.body;
   if (password === TEACHER_PASSWORD) {
-    res.json({ ok: true });
+    const token = crypto.randomBytes(24).toString('hex');
+    teacherTokens.add(token);
+    res.json({ ok: true, token });
   } else {
     res.status(401).json({ ok: false, error: 'Senha incorreta' });
   }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  teacherTokens.delete(token);
+  res.json({ ok: true });
 });
 
 // ─── Labs API — serve dados do lab ao frontend ───────────────────────────────
@@ -1403,7 +1422,7 @@ let runtimeConfig = {
   resendFrom:   process.env.RESEND_FROM || '',
 };
 
-app.get('/api/config/email', (req, res) => {
+app.get('/api/config/email', requireTeacher, (req, res) => {
   res.json({
     teacherEmail: runtimeConfig.teacherEmail,
     resendFrom: runtimeConfig.resendFrom || RESEND_FROM,
@@ -1411,7 +1430,7 @@ app.get('/api/config/email', (req, res) => {
   });
 });
 
-app.post('/api/config/email', (req, res) => {
+app.post('/api/config/email', requireTeacher, (req, res) => {
   const { teacherEmail, resendKey, resendFrom } = req.body;
   if (teacherEmail) runtimeConfig.teacherEmail = teacherEmail;
   if (resendKey)    runtimeConfig.resendKey    = resendKey;
@@ -1553,6 +1572,11 @@ wss.on('connection', (ws, req) => {
       const msg = JSON.parse(data);
 
       if (msg.type === 'auth') {
+        if (msg.role === 'teacher' && !teacherTokens.has(msg.token)) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Autenticação de professor necessária' }));
+          ws.close();
+          return;
+        }
         wsClients.set(ws, { role: msg.role || 'student', sessionId: msg.sessionId });
         if (msg.role === 'teacher') {
           ws.send(JSON.stringify({ type: 'dashboard', snapshot: getDashboardSnapshot() }));
