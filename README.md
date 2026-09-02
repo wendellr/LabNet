@@ -5,6 +5,28 @@ Containerlab e Docker. O sistema provisiona automaticamente uma topologia
 isolada por aluno e suporta ate 15 alunos simultaneos, respeitando os
 recursos do servidor.
 
+Produção: [labnet.ioda.com.br](https://labnet.ioda.com.br)
+
+O currículo segue uma **escala evolutiva** deliberada: cada protocolo tem
+sua própria trilha (OSPF, BGP, OSPF+BGP), organizada em níveis de 1
+(fundamentos) a 6 (avançado) — o aluno nunca encontra um conceito antes de
+ter o alicerce pedagógico pra ele. Veja a tabela completa em
+[Labs Disponíveis](#labs-disponiveis).
+
+## Capturas de Tela
+
+| | |
+|---|---|
+| ![Catálogo de labs por trilha e nível](docs/screenshots/catalogo.png) Catálogo — trilhas OSPF/BGP/OSPF+BGP, níveis 1-6 | ![Prévia de um lab sem provisionar](docs/screenshots/preview-lab.png) Prévia do roteiro antes de provisionar |
+| ![Terminal vtysh ao vivo num roteador FRR real](docs/screenshots/terminal-vivo.png) Terminal `vtysh` ao vivo, roteador FRR real | ![Painel do professor com monitoramento em tempo real](docs/screenshots/painel-professor.png) Painel do professor — sessões e saúde do servidor em tempo real |
+
+<details>
+<summary>Histórico de notas do professor</summary>
+
+![Histórico de notas por matrícula](docs/screenshots/notas.png)
+
+</details>
+
 ## Estado Atual
 
 - Frontend React/Vite servido por Nginx em container Docker.
@@ -12,7 +34,16 @@ recursos do servidor.
 - Containerlab tambem roda no host Linux, nao dentro de container.
 - Roteadores dos labs usam `quay.io/frrouting/frr:10.5.0`.
 - Cada aluno recebe containers FRR proprios, com nomes `clab-<session>-<router>`.
-- Professor acompanha sessoes, comandos, progresso e notas.
+- Autenticação real de professor: `POST /api/auth/teacher` retorna um bearer
+  token (`crypto.randomBytes`), exigido em todo `/api/admin/*` — o token vive
+  em memória e não sobrevive a um restart do backend (professor loga de novo).
+- Histórico de notas persistente por matrícula, em `grades.jsonl` fora do
+  repositório (sobrevive a `git pull`/restart), consultável em
+  `GET /api/admin/grades` e na aba "🎓 Notas" do painel.
+- Recuperação de sessão: se o aluno voltar à tela inicial no meio de um lab,
+  o LabNet oferece reconectar à sessão em andamento em vez de perdê-la.
+- Professor acompanha sessoes, comandos, progresso, notas e saúde do
+  servidor (CPU/memória) em tempo real.
 - Ao enviar respostas, o backend corrige, calcula a nota e envia relatorio por e-mail via Resend.
 
 ## Por Que O Backend Roda No Host
@@ -27,24 +58,47 @@ de namespace e criacao de links. Por isso, o desenho suportado em VPS Linux e:
 
 ## Labs Disponiveis
 
-| Lab | Titulo | Protocolo | Perfil |
+16 labs no total, cada um com falha proposital ou desafio de diagnóstico
+para investigar (não um tutorial de copiar-e-colar), `variables` que
+randomizam parâmetros por sessão, e `predict` — previsão do resultado antes
+de verificar.
+
+### Trilha OSPF (fundamentos → avançado)
+
+| Lab | Nível | Título | Perfil |
 |---|---|---|---|
-| 1 | MED e AS-Path Prepend | BGP | leve |
-| 2 | BGP Local Preference | BGP | leve |
-| 3 | BGP Path Control | BGP | leve |
-| 4 | BGP Confederations | BGP | moderado |
-| 5 | Bestpath AS-PATH Ignore e Aggregate Address | BGP | leve |
-| 6 | Community, AS-Path Prepend e Default Route | BGP | leve |
-| 7 | BGP Backdoor e AS-Path Prepend | BGP + OSPF | leve |
-| 8 | AS-Path Prepend, Weight e Default Route | BGP | leve |
-| 9 | Route Reflector e BGP Communities | BGP | moderado |
-| 10 | OSPF — Diagnóstico de Falha de Adjacência e Seleção de Caminho | OSPF | leve |
+| 13 | 1 | OSPF — Adjacência Básica e Tabela de Rotas | leve |
+| 10 | 2 | OSPF — Diagnóstico de Falha de Adjacência e Seleção de Caminho | leve |
+| 14 | 3 | OSPF — Tipo de Rede e Eleição de DR/BDR | leve |
+| 11 | 4 | OSPF Multi-Área e Sumarização de Rotas | leve |
+| 12 | 5 | OSPF Área Stub — Escopo de Flooding de LSA Type-5 | leve |
+| 15 | 6 | OSPF — Virtual Links e Autenticação | leve |
+
+### Trilha BGP (fundamentos → avançado)
+
+| Lab | Nível | Título | Perfil |
+|---|---|---|---|
+| 0 | — | Lab 0 — Bem-vindo ao LabNet (demonstração guiada pelo professor) | leve |
+| 1 | 1 | MED e AS-Path Prepend | leve |
+| 2 | 2 | BGP Local Preference | leve |
+| 3 | 3 | BGP Path Control | leve |
+| 8 | 3 | AS-Path Prepend, Weight e Default Route | leve |
+| 5 | 4 | Bestpath AS-PATH Ignore e Aggregate Address | leve |
+| 6 | 5 | Community, AS-Path Prepend e Default Route | leve |
+| 4 | 6 | BGP Confederations | moderado |
+| 9 | 6 | Route Reflector e BGP Communities | moderado |
+
+### Trilha OSPF+BGP (integração — capstone)
+
+| Lab | Nível | Título | Perfil |
+|---|---|---|---|
+| 7 | 1 | BGP Backdoor e AS-Path Prepend | leve |
 
 Os labs ficam em `backend/labs/lab-XX.js` e sao carregados automaticamente. Para
 ocultar um lab sem apagar o arquivo, use `enabled: false`. Veja
 `backend/labs/README.md` para o schema completo, incluindo os campos
-`protocol`, `variables` (aleatorização por sessão) e `predict` (previsão
-antes de verificar).
+`protocol`, `level`, `variables` (aleatorização por sessão) e `predict`
+(previsão antes de verificar).
 
 ## Arquitetura De Producao
 
@@ -297,26 +351,29 @@ sudo journalctl -u labnet-backend -n 200 --no-pager | grep -i email
 ## Fluxo Do Aluno
 
 1. Acessa o dominio do LabNet.
-2. Digita nome e escolhe o lab.
-3. Backend provisiona a topologia Containerlab da sessao.
+2. Digita nome (e matrícula, opcional) e escolhe o lab — pode espiar o roteiro na prévia antes de provisionar.
+3. Backend provisiona a topologia Containerlab da sessao, com valores aleatorizados por sessão (`variables`).
 4. Aluno usa o terminal `vtysh` dos roteadores FRR.
-5. Aluno segue roteiro, executa verificacoes e responde ao desafio.
-6. Ao enviar respostas, recebe nota e feedback.
-7. Professor recebe relatorio por e-mail se Resend estiver configurado.
+5. Aluno segue roteiro, prevê o resultado antes de verificar (`predict`), executa verificacoes e responde ao desafio.
+6. Se voltar à tela inicial no meio do lab, o LabNet oferece reconectar à sessão em andamento.
+7. Ao enviar respostas, recebe nota e feedback; a nota fica registrada no histórico do professor por matrícula.
+8. Professor recebe relatorio por e-mail se Resend estiver configurado.
 
 ## Painel Do Professor
 
-O professor acessa pela tela inicial usando `TEACHER_PASSWORD`.
+O professor acessa pela tela inicial usando `TEACHER_PASSWORD`. O login
+(`POST /api/auth/teacher`) retorna um bearer token exigido por todo
+`/api/admin/*` e pela autenticação do WebSocket como `role: teacher` — sem
+token válido, os endpoints administrativos retornam 401. O token vive em
+memória do processo, então um restart do backend exige novo login.
 
-Recursos:
+Abas do painel:
 
-- sessoes ativas;
-- progresso dos alunos;
-- historico de comandos;
-- eventos em tempo real;
-- encerramento manual de sessao;
-- broadcast de mensagens;
-- score final.
+- **Visão Geral**: sessões ativas, saúde do servidor (CPU/memória), envio de mensagens aos alunos;
+- **Sessões**: progresso, histórico de comandos, encerramento manual de sessão;
+- **Notas**: histórico de notas persistente por matrícula (`grades.jsonl`), busca e exportação CSV;
+- **Eventos**: linha do tempo em tempo real (provisionamento, comandos, submissões, auto-cleanup);
+- **Email**: configuração de envio de relatório por Resend.
 
 Quando o professor encerra uma sessao, a tela do aluno volta automaticamente para o menu.
 
@@ -335,9 +392,17 @@ O backend remove sessoes inativas:
 Cada lab pode ter:
 
 - `autoGrade`: checkpoints de progresso enquanto o aluno executa comandos;
-- `verifications`: criterios tecnicos usados na nota final;
+- `verifications`: criterios tecnicos usados na nota final (70% da nota);
 - `challenge.questions`: questoes objetivas;
-- `answerKey`: gabarito e pontuacao.
+- `answerKey`: gabarito e pontuacao (30% da nota) — inclui também as
+  respostas de `predict` (previsão antes de verificar), avaliadas por
+  palavra-chave;
+- `variables`: pools de valores resolvidos de forma determinística por
+  sessão (mesmo aluno sempre vê os mesmos valores).
+
+Notas ficam registradas em `grades.jsonl` (fora do repositório, dentro de
+`LAB_BASE_DIR`) por matrícula, consultáveis pelo professor a qualquer
+momento, mesmo depois de a sessão em memória ter sido limpa.
 
 O relatorio por e-mail inclui:
 
@@ -366,6 +431,8 @@ O relatorio por e-mail inclui:
 │   └── nginx.conf
 ├── scripts/
 │   └── install-host-backend.sh
+├── docs/
+│   └── screenshots/
 ├── docker-compose.yml
 ├── stack.env.example
 └── README.md
