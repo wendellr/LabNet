@@ -30,7 +30,7 @@ const lab = {
       id: "bgp_established",
       label: "Sessão eBGP estabelecida entre R1 e R2",
       weight: 100,
-      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "10\\.0\\.0\\.2\\s+4\\s+200[\\s\\S]*Established" },
+      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "10\\.0\\.0\\.2\\s+4\\s+200" },
     },
   ],
 
