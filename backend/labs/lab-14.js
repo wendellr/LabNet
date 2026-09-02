@@ -113,7 +113,7 @@ const lab = {
     },
     q4: {
       type: "radio",
-      correct: "Não — a eleição de DR não é preemptiva; o DR atual continua sendo DR até sair do ar ou o processo OSPF reiniciar",
+      correct: "Não — a eleição de DR não é preemptiva; o DR atual continua sendo DR mesmo que o outro lado passe a ter prioridade maior, até que ele mesmo perca a adjacência ou seu próprio processo reinicie",
       points: 16,
     },
     q5: {
@@ -160,14 +160,15 @@ const lab = {
     {
       id: 3,
       title: "Forçar R1 a vencer a eleição em R1-R2",
-      theory: "Prioridade é o PRIMEIRO critério de desempate — antes até do Router ID. Um detalhe importante e pouco intuitivo: a eleição de DR não é preemptiva. Se você mudar a prioridade de um roteador depois que o DR já foi eleito, isso NÃO troca o DR na hora — o DR atual continua DR até sair do ar (interface cair, processo reiniciar) ou até uma nova eleição ser forçada manualmente. Por isso, depois de mudar a prioridade, é preciso usar 'clear ip ospf process' para forçar uma nova eleição.",
-      description: "Em R1, aumente a prioridade da interface para R2 acima do padrão (1):\n\n  configure terminal\n  interface eth1\n   ip ospf priority {{r1Priority}}\n  end\n  clear ip ospf process\n\nDepois confirme em R2 que R1 passou a ser o DR.",
+      theory: "Prioridade é o PRIMEIRO critério de desempate — antes até do Router ID. Um detalhe importante e pouco intuitivo: a eleição de DR não é preemptiva. Se você mudar a prioridade de um roteador depois que o DR já foi eleito, isso NÃO troca o DR na hora — o DR atual continua DR até sair do ar.\n\nArmadilha real: rodar 'clear ip ospf process' SÓ no roteador cuja prioridade você mudou não é suficiente. R2 (o DR atual) nunca perdeu seu próprio estado — ele continua se anunciando como DR nos Hellos, e R1, ao formar a adjacência de novo, simplesmente aceita o DR já anunciado por R2 sem contestar, mesmo tendo prioridade maior agora. É preciso reiniciar o processo OSPF dos DOIS lados do segmento para forçar uma eleição genuinamente do zero.",
+      description: "Em R1, aumente a prioridade da interface para R2 acima do padrão (1), depois force uma nova eleição reiniciando o processo OSPF nos DOIS lados do segmento:\n\nEm R1:\n  configure terminal\n  interface eth1\n   ip ospf priority {{r1Priority}}\n  end\n  clear ip ospf process\n\nEm R2 (necessário também — R2 nunca perdeu o próprio estado de DR):\n  clear ip ospf process\n\nDepois confirme em R2 que R1 passou a ser o DR.",
       commands: [
         { cmd: "show running-config", router: "R1", desc: "Confirme ip ospf priority {{r1Priority}} na interface eth1" },
-        { cmd: "clear ip ospf process", router: "R1", desc: "Força nova eleição de DR/BDR" },
+        { cmd: "clear ip ospf process", router: "R1", desc: "Reinicia o processo OSPF em R1" },
+        { cmd: "clear ip ospf process", router: "R2", desc: "Reinicia também em R2 — sem isso, R2 nunca reconsidera seu próprio papel de DR" },
         { cmd: "show ip ospf neighbor", router: "R2", desc: "R1 (1.1.1.1) já aparece como DR?" },
       ],
-      expected: "Depois de 'clear ip ospf process', R1 (prioridade {{r1Priority}}, maior que a de R2) é eleito o novo DR do segmento.",
+      expected: "Só depois de reiniciar o processo OSPF nos DOIS lados, R1 (prioridade {{r1Priority}}, maior que a de R2) é eleito o novo DR do segmento. Reiniciar só em R1 não seria suficiente — R2, que nunca perdeu seu próprio estado de DR, continuaria se anunciando como DR e R1 aceitaria isso sem contestar.",
     },
   ],
 
@@ -220,7 +221,7 @@ const lab = {
         text: "Depois que um DR já foi eleito num segmento, mudar a prioridade de outro roteador para um valor mais alto troca o DR imediatamente?",
         options: [
           "Sim, a mudança de prioridade sempre força uma nova eleição instantânea",
-          "Não — a eleição de DR não é preemptiva; o DR atual continua sendo DR até sair do ar ou o processo OSPF reiniciar",
+          "Não — a eleição de DR não é preemptiva; o DR atual continua sendo DR mesmo que o outro lado passe a ter prioridade maior, até que ele mesmo perca a adjacência ou seu próprio processo reinicie",
           "Sim, mas só se o novo roteador tiver Router ID maior também",
           "Não, a prioridade só pode ser mudada uma vez por sessão OSPF",
         ],
