@@ -14,6 +14,9 @@ module.exports = {
   level: 3,
   scenario: "Um roteador de borda específico precisa preferir um caminho só para si mesmo, sem afetar o resto do AS — diferente de Local Preference, que é consenso de toda a rede interna. Weight resolve isso: é local ao roteador, nunca é anunciado a ninguém. Combinado com ORIGIN (que distingue rotas geradas internamente de rotas redistribuídas) e Confederação (que organiza um AS grande em sub-ASes sem expor essa divisão para fora), o time de rede ganha controle fino sobre decisões de caminho em pontos específicos da topologia.",
   enabled: true,
+  variables: {
+    weightValue: { pool: ["500", "800", "1200", "1500"] },
+  },
   title: "BGP Path Control",
   topic: "Weight, ORIGIN e Confederação",
   difficulty: "Intermediário",
@@ -178,7 +181,7 @@ router bgp 65504
       label: "Weight observado na rota de R1",
       router: "R2",
       cmdContains: "show ip bgp 150.1.1.0",
-      outputContains: "weight 1000",
+      outputContains: "weight {{weightValue}}",
     },
     {
       id: "lab3_origin_seen",
@@ -194,7 +197,7 @@ router bgp 65504
       id: "bgp_established",
       label: "Sessões BGP verificadas",
       weight: 10,
-      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "Established" },
+      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+" },
     },
     {
       id: "confed_configured",
@@ -206,13 +209,13 @@ router bgp 65504
       id: "weight_r2_configured",
       label: "Weight configurado no R2 para prefixo de R1",
       weight: 15,
-      check: { router: "R2", cmdPattern: "show running-config", outputPattern: "set weight 1000" },
+      check: { router: "R2", cmdPattern: "show running-config", outputPattern: "set weight {{weightValue}}" },
     },
     {
       id: "weight_r3_configured",
       label: "Weight configurado no R3 para prefixo de R1",
       weight: 15,
-      check: { router: "R3", cmdPattern: "show running-config", outputPattern: "set weight 1000" },
+      check: { router: "R3", cmdPattern: "show running-config", outputPattern: "set weight {{weightValue}}" },
     },
     {
       id: "origin_incomplete_configured",
@@ -227,20 +230,34 @@ router bgp 65504
       check: { router: "R4", cmdPattern: "show running-config", outputPattern: "set origin egp" },
     },
     {
-      id: "r1_origin_verified",
-      label: "R1 verificou múltiplos ORIGINs para 150.3.3.0/24",
+      id: "r1_prefers_igp_origin",
+      label: "R1 prefere o caminho via R2 (ORIGIN IGP, não modificado) para 150.3.3.0/24",
       weight: 20,
-      check: { router: "R1", cmdPattern: "show ip bgp 150\\.3\\.3\\.0", outputPattern: "150\\.3\\.3\\.0" },
+      check: { router: "R1", cmdPattern: "show ip bgp 150\\.3\\.3\\.0", outputPattern: "from 10\\.0\\.0\\.2[\\s\\S]*?Origin IGP[\\s\\S]*?best" },
     },
   ],
 
   answerKey: {
-    q1: { type: "radio", correct: "Ele é local ao roteador e vence antes de Local Preference e AS-PATH", points: 15 },
-    q2: { type: "radio", correct: "Inbound, no roteador que deve preferir a rota recebida de R1", points: 15 },
-    q3: { type: "radio", correct: "IGP é preferido sobre EGP, e EGP é preferido sobre incomplete", points: 15 },
-    q4: { type: "radio", correct: "No anúncio de saída para R1, usando route-map out", points: 15 },
-    q5: { type: "radio", correct: "Os sub-ASes internos aparecem como parte da confederação, mas o AS externo enxerga apenas o AS confederado 5", points: 20 },
-    q6: { type: "radio", correct: "Porque a prefix-list limita a política somente ao prefixo desejado", points: 20 },
+    predict_weight_scope: {
+      type: "keywords",
+      required: ["não", "nao", "local", "só r2", "so r2"],
+      anyOf: true,
+      points: 8,
+      hint: "Weight é local ao roteador onde foi configurado — nunca é anunciado a nenhum vizinho, nem dentro da própria confederação.",
+    },
+    predict_origin_winner: {
+      type: "keywords",
+      required: ["r2", "igp"],
+      anyOf: true,
+      points: 7,
+      hint: "ORIGIN vence antes de comprimento de caminho não fazer diferença — IGP é sempre preferido sobre EGP e incomplete, mesmo num caminho topologicamente mais longo.",
+    },
+    q1: { type: "radio", correct: "Ele é local ao roteador e vence antes de Local Preference e AS-PATH", points: 13 },
+    q2: { type: "radio", correct: "Inbound, no roteador que deve preferir a rota recebida de R1", points: 13 },
+    q3: { type: "radio", correct: "IGP é preferido sobre EGP, e EGP é preferido sobre incomplete", points: 13 },
+    q4: { type: "radio", correct: "No anúncio de saída para R1, usando route-map out", points: 13 },
+    q5: { type: "radio", correct: "Os sub-ASes internos aparecem como parte da confederação, mas o AS externo enxerga apenas o AS confederado 5", points: 18 },
+    q6: { type: "radio", correct: "Porque a prefix-list limita a política somente ao prefixo desejado", points: 18 },
   },
 
   steps: [
@@ -279,7 +296,7 @@ Exemplo no R2:
   ip prefix-list NET_R1 seq 10 permit 150.1.1.0/24
   route-map WEIGHT_R1 permit 10
    match ip address prefix-list NET_R1
-   set weight 1000
+   set weight {{weightValue}}
   route-map WEIGHT_R1 permit 20
   router bgp 65502
    address-family ipv4 unicast
@@ -293,10 +310,14 @@ No R3, use a mesma ideia para o vizinho R1 em 10.0.0.5.`,
         { router: "R3", cmd: "show running-config", desc: "Confirme a mesma política no R3" },
         { router: "R2", cmd: "clear bgp * soft in", desc: "Reaplica política inbound em R2" },
         { router: "R3", cmd: "clear bgp * soft in", desc: "Reaplica política inbound em R3" },
-        { router: "R2", cmd: "show ip bgp 150.1.1.0/24", desc: "Rota via R1 deve mostrar weight 1000" },
-        { router: "R3", cmd: "show ip bgp 150.1.1.0/24", desc: "Rota via R1 deve mostrar weight 1000" },
+        { router: "R2", cmd: "show ip bgp 150.1.1.0/24", desc: "Rota via R1 deve mostrar weight {{weightValue}}" },
+        { router: "R3", cmd: "show ip bgp 150.1.1.0/24", desc: "Rota via R1 deve mostrar weight {{weightValue}}" },
       ],
       expected: "R2 e R3 preferem a rota de 150.1.1.0/24 recebida diretamente de R1.",
+      predict: {
+        id: "predict_weight_scope",
+        prompt: "Se você configurar Weight só em R2 (não em R3), você espera que R3 também mude sua decisão de melhor caminho? Por quê?",
+      },
     },
     {
       id: 3,
@@ -337,7 +358,11 @@ Em R4, use "set origin egp" para o vizinho R1 em 150.1.1.1.`,
         { router: "R4", cmd: "clear bgp * soft out", desc: "Reenvia anúncios de R4" },
         { router: "R1", cmd: "show ip bgp 150.3.3.0/24", desc: "Compare ORIGIN dos caminhos" },
       ],
-      expected: "R1 deve enxergar ORIGINs diferentes para 150.3.3.0/24: via R2 como IGP, via R4 como EGP e via R3 como incomplete.",
+      expected: "R1 deve enxergar ORIGINs diferentes para 150.3.3.0/24: via R2 como IGP, via R4 como EGP e via R3 como incomplete. Mesmo o caminho direto via R3 sendo topologicamente mais curto, R1 deve acabar preferindo o caminho via R2 — o único que continua com ORIGIN IGP.",
+      predict: {
+        id: "predict_origin_winner",
+        prompt: "Depois de aplicar as três políticas de ORIGIN, qual caminho você espera que R1 prefira para 150.3.3.0/24: o direto via R3 (mais curto), ou via R2? Por quê?",
+      },
     },
   ],
 

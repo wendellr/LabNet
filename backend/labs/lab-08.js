@@ -20,6 +20,10 @@ module.exports = {
   difficulty: "Intermediário",
   duration: "60 min",
   resourceProfile: "leve",
+  variables: {
+    weightValue: { pool: ["50", "100", "150", "200"] },
+    prependDefault: { pool: ["1 1", "1 1 1", "1 1 1 1"] },
+  },
   routers: ["R1", "R2", "R3", "R4"],
   links: [
     ["R1", "eth1", "R2", "eth1"],
@@ -136,7 +140,7 @@ ip route 10.3.3.0/24 10.0.34.1
       label: "Sessões BGP observadas",
       router: "R1",
       cmdContains: "show bgp summary",
-      outputContains: "Established",
+      outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+",
     },
     {
       id: "lab8_multihop_seen",
@@ -166,7 +170,7 @@ ip route 10.3.3.0/24 10.0.34.1
       id: "bgp_established",
       label: "Sessões BGP iniciais verificadas",
       weight: 10,
-      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "Established" },
+      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+" },
     },
     {
       id: "host_routes_configured",
@@ -202,7 +206,7 @@ ip route 10.3.3.0/24 10.0.34.1
       id: "prepend_default_configured",
       label: "Default via R3 recebe AS-Path Prepend",
       weight: 10,
-      check: { router: "R1", cmdPattern: "show running-config", outputPattern: "as-path prepend 1 1" },
+      check: { router: "R1", cmdPattern: "show running-config", outputPattern: "as-path prepend {{prependDefault}}" },
     },
     {
       id: "r3_default_verified",
@@ -213,12 +217,26 @@ ip route 10.3.3.0/24 10.0.34.1
   ],
 
   answerKey: {
-    q1: { type: "radio", correct: "Porque a sessão BGP usa endereços que não estão diretamente conectados", points: 15 },
-    q2: { type: "radio", correct: "ebgp-multihop e update-source", points: 15 },
-    q3: { type: "radio", correct: "Weight é local ao roteador e vence antes de AS-PATH", points: 20 },
-    q4: { type: "radio", correct: "Para manter R1 preferindo o caminho primário via R2 quando ele estiver disponível", points: 15 },
-    q5: { type: "radio", correct: "Ele torna a default anunciada pelo caminho direto menos preferida", points: 15 },
-    q6: { type: "radio", correct: "R4 apenas encaminha IP entre R1 e R3; ele não participa do BGP", points: 20 },
+    predict_weight_direct: {
+      type: "keywords",
+      required: ["direto", "r3", "muda", "sim"],
+      anyOf: true,
+      points: 8,
+      hint: "Sem Weight, AS-PATH decide e o caminho direto (mais curto) venceria. Weight é comparado ANTES de AS-PATH, então muda a decisão.",
+    },
+    predict_default_backup: {
+      type: "keywords",
+      required: ["r2", "via r2"],
+      anyOf: true,
+      points: 7,
+      hint: "O AS-Path Prepend torna a default direta artificialmente mais longa, então a default via R2 (não modificada) vence.",
+    },
+    q1: { type: "radio", correct: "Porque a sessão BGP usa endereços que não estão diretamente conectados", points: 13 },
+    q2: { type: "radio", correct: "ebgp-multihop e update-source", points: 13 },
+    q3: { type: "radio", correct: "Weight é local ao roteador e vence antes de AS-PATH", points: 17 },
+    q4: { type: "radio", correct: "Para manter R1 preferindo o caminho primário via R2 quando ele estiver disponível", points: 13 },
+    q5: { type: "radio", correct: "Ele torna a default anunciada pelo caminho direto menos preferida", points: 13 },
+    q6: { type: "radio", correct: "R4 apenas encaminha IP entre R1 e R3; ele não participa do BGP", points: 16 },
   },
 
   steps: [
@@ -301,17 +319,21 @@ Como a regra do exercício evita route-map, usamos o comando simples "neighbor X
 
   configure terminal
   router bgp 1
-   neighbor 10.0.12.2 weight 100
+   neighbor 10.0.12.2 weight {{weightValue}}
   end
   clear bgp * soft in
 
 Depois compare o caminho para 10.3.3.0/24.`,
       commands: [
-        { router: "R1", cmd: "show running-config", desc: "Confirme neighbor 10.0.12.2 weight 100" },
+        { router: "R1", cmd: "show running-config", desc: "Confirme neighbor 10.0.12.2 weight {{weightValue}}" },
         { router: "R1", cmd: "clear bgp * soft in", desc: "Reaplica política inbound" },
         { router: "R1", cmd: "show ip bgp 10.3.3.0/24", desc: "R1 deve preferir via R2 mesmo com caminho direto disponível" },
       ],
       expected: "R1 mantém o caminho via R2 como preferido por causa do Weight.",
+      predict: {
+        id: "predict_weight_direct",
+        prompt: "Antes de configurar o Weight, o caminho direto via eBGP multihop (R1-R3) tem AS-PATH mais curto que o caminho via R2. Sem o Weight, qual caminho R1 preferiria? Depois de configurar o Weight, isso muda?",
+      },
     },
     {
       id: 4,
@@ -323,7 +345,7 @@ Mas quando o caminho primário via R2 está ativo, queremos que R3 prefira a def
 
   configure terminal
   route-map PREPEND_DEFAULT permit 10
-   set as-path prepend 1 1
+   set as-path prepend {{prependDefault}}
   router bgp 1
    address-family ipv4 unicast
     neighbor 10.0.34.1 default-originate route-map PREPEND_DEFAULT
@@ -337,6 +359,10 @@ Depois veja as duas opções de default em R3.`,
         { router: "R3", cmd: "show ip bgp 0.0.0.0/0", desc: "Compare default via R2 e via eBGP multihop" },
       ],
       expected: "R3 deve preferir a default via R2, enquanto mantém a default direta via R1 como alternativa menos preferida.",
+      predict: {
+        id: "predict_default_backup",
+        prompt: "Depois de aplicar o AS-Path Prepend na default direta de R1 para R3, qual das duas defaults (via R2, ou direta via eBGP multihop) você espera que R3 prefira?",
+      },
     },
     {
       id: 5,
