@@ -30,6 +30,10 @@ module.exports = {
     ["R1", "eth2", "R4", "eth2"],
   ],
 
+  variables: {
+    prependArg: { pool: ["1 1", "1 1 1", "1 1 1 1"] },
+  },
+
   frr_configs: {
     R1: `frr version 9.0
 frr defaults traditional
@@ -147,7 +151,7 @@ router bgp 1
       label: "Sessões BGP observadas",
       router: "R2",
       cmdContains: "show bgp summary",
-      outputContains: "Established",
+      outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+",
     },
     {
       id: "lab7_default_seen",
@@ -177,59 +181,79 @@ router bgp 1
       id: "bgp_established",
       label: "Sessões BGP verificadas",
       weight: 10,
-      check: { router: "R2", cmdPattern: "show bgp summary", outputPattern: "Established" },
+      check: { router: "R2", cmdPattern: "show bgp summary", outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+" },
     },
     {
       id: "default_originate",
       label: "R1 e R4 anunciam default route",
-      weight: 15,
+      weight: 10,
       check: { router: "R1", cmdPattern: "show running-config", outputPattern: "default-originate" },
     },
     {
       id: "prepend_default",
       label: "R4 usa AS-Path Prepend na default anunciada para R3",
-      weight: 15,
-      check: { router: "R4", cmdPattern: "show running-config", outputPattern: "as-path prepend 1 1 1" },
+      weight: 10,
+      check: { router: "R4", cmdPattern: "show running-config", outputPattern: "as-path prepend {{prependArg}}" },
     },
     {
-      id: "r3_default_verified",
-      label: "R3 verificou a escolha da default route",
+      id: "r3_prefers_indirect_default",
+      label: "R3 passou a preferir a default via R2/R1 depois do prepend",
       weight: 10,
-      check: { router: "R3", cmdPattern: "show ip bgp 0\\.0\\.0\\.0", outputPattern: "0\\.0\\.0\\.0/0" },
+      check: { router: "R3", cmdPattern: "show ip bgp 0\\.0\\.0\\.0", outputPattern: "10\\.0\\.23\\.1[\\s\\S]*?best" },
     },
     {
       id: "ospf_neighbor",
       label: "OSPF estabelecido entre R1 e R4",
-      weight: 15,
-      check: { router: "R4", cmdPattern: "show ip ospf neighbor", outputPattern: "Full" },
+      weight: 10,
+      check: { router: "R4", cmdPattern: "show ip ospf neighbor", outputPattern: "1\\.1\\.1\\.1[\\s\\S]*?Full" },
     },
     {
       id: "redistribute_bgp",
       label: "BGP redistribuido no OSPF",
       weight: 10,
-      check: { router: "R4", cmdPattern: "show running-config", outputPattern: "redistribute bgp 1" },
+      check: { router: "R4", cmdPattern: "show running-config", outputPattern: "redistribute bgp" },
     },
     {
       id: "backdoor_configured",
       label: "BGP backdoor configurado em R4",
-      weight: 15,
+      weight: 10,
       check: { router: "R4", cmdPattern: "show running-config", outputPattern: "backdoor" },
     },
     {
-      id: "route_checked",
-      label: "R4 verificou a rota para as LANs remotas",
-      weight: 10,
-      check: { router: "R4", cmdPattern: "show ip route 10\\.2\\.2\\.0|show ip route 10\\.3\\.3\\.0", outputPattern: "10\\.[23]\\.2?3?\\.?.*0/24|10\\.2\\.2\\.0|10\\.3\\.3\\.0" },
+      id: "ospf_wins_10_2_2",
+      label: "R4 instala a rota OSPF (não eBGP) para 10.2.2.0/24 — backdoor funcionando",
+      weight: 15,
+      check: { router: "R4", cmdPattern: "show ip route 10\\.2\\.2\\.0/24", outputPattern: "Known via \"ospf\"" },
+    },
+    {
+      id: "ospf_wins_10_3_3",
+      label: "R4 instala a rota OSPF (não eBGP) para 10.3.3.0/24 — backdoor funcionando",
+      weight: 15,
+      check: { router: "R4", cmdPattern: "show ip route 10\\.3\\.3\\.0/24", outputPattern: "Known via \"ospf\"" },
     },
   ],
 
   answerKey: {
-    q1: { type: "radio", correct: "Porque R1 e R4 estão no mesmo AS, mas o lab quer evitar iBGP direto entre eles", points: 15 },
-    q2: { type: "radio", correct: "default-originate", points: 15 },
-    q3: { type: "radio", correct: "Aplicar AS-Path Prepend na default anunciada por R4 para R3", points: 15 },
-    q4: { type: "radio", correct: "Ele aumenta a distância administrativa da rota eBGP específica para 200, permitindo preferir uma rota IGP", points: 20 },
-    q5: { type: "radio", correct: "OSPF fornece o caminho interno alternativo entre R1 e R4", points: 15 },
-    q6: { type: "radio", correct: "A rota BGP volta a ser usada como fallback quando a rota IGP desaparece", points: 20 },
+    predict_step2: {
+      type: "keywords",
+      required: ["r4", "direto", "curto", "menor"],
+      anyOf: true,
+      points: 10,
+      hint: "A default originada diretamente por R4 tem AS-PATH de 1 salto só (o próprio AS de R4); a que vem via R2 já chega com 2 ASes no caminho (R2 e R1).",
+    },
+    predict_step5: {
+      type: "keywords",
+      required: ["ebgp", "bgp", "20"],
+      anyOf: true,
+      points: 10,
+      hint: "Sem backdoor, o BGP (distância administrativa 20) vence o OSPF (110) mesmo que o vizinho OSPF já esteja Full — distância administrativa menor sempre ganha por padrão.",
+    },
+    q1: { type: "radio", correct: "Porque R1 e R4 estão no mesmo AS, mas o lab quer evitar iBGP direto entre eles", points: 12 },
+    q2: { type: "radio", correct: "default-originate", points: 12 },
+    q3: { type: "radio", correct: "Aplicar AS-Path Prepend na default anunciada por R4 para R3", points: 12 },
+    q4: { type: "radio", correct: "Ele aumenta a distância administrativa da rota eBGP específica para 200, permitindo preferir uma rota IGP", points: 16 },
+    q5: { type: "radio", correct: "OSPF fornece o caminho interno alternativo entre R1 e R4", points: 12 },
+    q6: { type: "radio", correct: "A rota BGP volta a ser usada como fallback quando a rota IGP desaparece", points: 16 },
   },
 
   steps: [
@@ -277,19 +301,23 @@ No R4:
         { router: "R2", cmd: "show ip bgp 0.0.0.0/0", desc: "R2 deve ver default por R1 e por R3/R4" },
         { router: "R3", cmd: "show ip bgp 0.0.0.0/0", desc: "R3 deve ver default por R4 e por R2/R1" },
       ],
-      expected: "R2 e R3 veem default routes via BGP.",
+      expected: "R2 e R3 veem default routes via BGP. R3 já recebe duas: uma direto de R4 (AS-PATH de 1 salto) e outra vinda de R2 (AS-PATH de 2 saltos, R2 e R1).",
+      predict: {
+        id: "predict_step2",
+        prompt: "Antes de aplicar qualquer prepend: das duas defaults que R3 recebe (uma direto de R4, outra via R2/R1), qual você espera que R3 prefira, e por quê?",
+      },
     },
     {
       id: 3,
       title: "Influenciar a default com AS-Path Prepend",
       theory: `AS-Path Prepend torna um caminho menos preferido repetindo o ASN no AS-PATH.
 
-Se R4 anuncia default para R3 com AS 1 repetido, a default recebida via R4 passa a parecer mais longa. R3 então tende a preferir a default que chega pelo caminho R2->R1.`,
+R3 hoje prefere a default vinda direto de R4, porque ela tem o AS-PATH mais curto (só o AS de R4). Se R4 anunciar essa default com AS 1 repetido, ela passa a ter AS-PATH mais longo que a alternativa via R2/R1 — e R3 deve trocar de preferência.`,
       description: `Configure em R4:
 
   configure terminal
   route-map PREPEND_DEFAULT permit 10
-   set as-path prepend 1 1 1 1
+   set as-path prepend {{prependArg}}
   router bgp 1
    address-family ipv4 unicast
     neighbor 10.0.34.1 default-originate route-map PREPEND_DEFAULT
@@ -358,6 +386,10 @@ Depois verifique se R4 passa a preferir as rotas via OSPF para 10.2.2.0/24 e 10.
         { router: "R4", cmd: "show ip route 10.3.3.0/24", desc: "Repita a verificação para 10.3.3.0/24" },
       ],
       expected: "R4 deve instalar a rota OSPF para os prefixos marcados como backdoor, mantendo BGP como alternativa.",
+      predict: {
+        id: "predict_step5",
+        prompt: "Antes de configurar o backdoor: mesmo com o vizinho OSPF já Full entre R1 e R4, qual rota você espera que esteja INSTALADA (não só conhecida) em R4 para 10.2.2.0/24 — a eBGP ou a OSPF? Por quê?",
+      },
     },
   ],
 
