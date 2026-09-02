@@ -7,6 +7,7 @@
 const lab = {
   "id": 4,
   "protocol": "bgp",
+  "scenario": "Um provedor de médio porte cresceu e hoje mantém dezenas de roteadores em full-mesh iBGP dentro do mesmo AS — cada novo roteador significa mais N sessões para configurar e manter. Confederação BGP resolve a escalabilidade dividindo o AS em sub-ASes menores (cada um com seu próprio full-mesh interno, bem menor), enquanto o mundo externo continua enxergando um único AS só, sem nenhuma mudança visível de fora.",
   "title": "BGP Confederations",
   "topic": "Escalabilidade BGP",
   "difficulty": "Avançado",

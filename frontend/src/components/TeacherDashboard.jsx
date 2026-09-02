@@ -5,6 +5,22 @@ import { Badge, Card, CopyButton, Toasts, CapacityBar, StatusBadge } from "./UI.
 import { LABS_META } from "../data/labs.js";
 
 // ─── SessionCard ──────────────────────────────────────────────────────────
+// ─── HealthBar — barra de porcentagem colorida por faixa (verde/amarelo/vermelho) ──
+function HealthBar({ label, pct }) {
+  const color = pct >= 85 ? "#f87171" : pct >= 60 ? "#fbbf24" : "#4ade80";
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ color: "#94a3b8", fontSize: 11 }}>{label}</span>
+        <span style={{ color, fontSize: 11, fontWeight: "bold" }}>{pct}%</span>
+      </div>
+      <div style={{ background: "#1e293b", borderRadius: 4, height: 6, overflow: "hidden" }}>
+        <div style={{ height: "100%", background: color, width: `${Math.min(100, pct)}%`, transition: "width .5s" }} />
+      </div>
+    </div>
+  );
+}
+
 function SessionCard({ session, selected, onClick, onKill }) {
   const idle = session.idleSince;
   const idleMin = Math.round(idle / 60000);
@@ -262,6 +278,23 @@ export function TeacherDashboard({ onExit }) {
                 </div>
               ))}
             </div>
+
+            {/* Saúde do servidor */}
+            {snapshot?.serverHealth && (
+              <Card style={{ marginBottom: 20 }}>
+                <h3 style={{ margin: "0 0 14px", color: "#e2e8f0", fontSize: 12, letterSpacing: 1, textTransform: "uppercase" }}>🖥 Saúde do Servidor</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                  <HealthBar
+                    label={`CPU — load ${snapshot.serverHealth.loadAvg1.toFixed(2)} / ${snapshot.serverHealth.cpuCount} núcleos`}
+                    pct={snapshot.serverHealth.loadPct}
+                  />
+                  <HealthBar
+                    label={`Memória — ${snapshot.serverHealth.usedMemGB}GB / ${snapshot.serverHealth.totalMemGB}GB`}
+                    pct={snapshot.serverHealth.memPct}
+                  />
+                </div>
+              </Card>
+            )}
 
             {/* Active session grid */}
             <Card style={{ marginBottom: 20 }}>

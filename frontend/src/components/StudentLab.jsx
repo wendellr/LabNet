@@ -79,6 +79,14 @@ function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoC
           <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 16 }}>{cur.title}</h3>
         </div>
 
+        {/* Cenário real — só no primeiro passo, ajuda a entender o "porquê" antes do "como" */}
+        {safeStep === 0 && labData?.scenario && (
+          <div style={{ background: "#052e16", border: "1px solid #166534", borderRadius: 10, padding: "12px 16px", margin: "0 0 18px" }}>
+            <div style={{ color: "#4ade80", fontSize: 10, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>🌍 Cenário Real</div>
+            <p style={{ color: "#86efac", fontSize: 12.5, lineHeight: 1.7, margin: 0 }}>{labData.scenario}</p>
+          </div>
+        )}
+
         {/* Teoria / descrição do passo */}
         {cur.description && (
           <div style={{ background: "#0a0f1a", border: "1px solid #1e3a5f", borderRadius: 10, padding: "14px 18px", margin: "0 0 18px" }}>

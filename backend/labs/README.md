@@ -10,6 +10,13 @@ defina `enabled: false`.
 - `protocol`: `"bgp"`, `"ospf"` ou `"bgp+ospf"` — usado pelo frontend para
   filtrar a grade de labs e escolher o modo do analisador de pacotes
   (aba Wireshark). Obrigatorio em todo lab novo.
+- `scenario`: obrigatorio em todo lab. Um parágrafo curto (3-5 frases)
+  descrevendo uma situação real de rede que motiva o conceito técnico do
+  lab — a analogia entre a configuração que o aluno vai fazer e uma
+  necessidade real de operação de rede (ex.: "empresa multihomed quer
+  controlar por qual link o tráfego de entrada chega"). Aparece na
+  prévia do lab (SessionGate) e no início do roteiro (StudentLab),
+  antes do primeiro passo.
 - `enabled`: `true` por padrao; use `false` para ocultar.
 - `title`, `topic`, `difficulty`, `duration`: metadados exibidos no frontend.
 - `resourceProfile`: `leve`, `moderado` ou `pesado`.

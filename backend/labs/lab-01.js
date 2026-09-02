@@ -8,6 +8,7 @@
 module.exports = {
   id: 1,
   protocol: "bgp",
+  scenario: "Sua empresa é multihomed — tem duas conexões com provedores diferentes para o mesmo destino. O time de rede quer influenciar por qual link o TRÁFEGO DE ENTRADA chega, sem controlar os roteadores dos provedores diretamente: MED sugere ao vizinho qual caminho prefere que ele use para te alcançar, e AS-Path Prepend torna um caminho artificialmente mais longo aos olhos de quem decide de fora.",
   title: "MED e AS-Path Prepend",
   topic: "Atributos de Seleção de Caminho",
   difficulty: "Iniciante",

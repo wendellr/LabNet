@@ -21,6 +21,22 @@ export function SessionGate({ onSession, onTeacher }) {
   const [showTeacher, setShowTeacher] = useState(false);
   const [apiLabs, setApiLabs] = useState(null);
   const [publicConfig, setPublicConfig] = useState(null);
+  const [previewLab, setPreviewLab] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+
+  const openPreview = async (id) => {
+    setPreviewLoading(true);
+    setPreviewLab(null);
+    try {
+      const data = await apiFetch("GET", `/labs/${id}`);
+      setPreviewLab(data);
+    } catch {
+      setPreviewLab({ title: "Não foi possível carregar a prévia deste lab." });
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   useEffect(() => {
     apiFetch("GET", "/labs")
@@ -118,6 +134,36 @@ export function SessionGate({ onSession, onTeacher }) {
             <Badge style={{ background: "#0d1f3c", color: "#60a5fa", border: "1px solid #1e3a5f" }}>⏱ Auto-cleanup 30 min</Badge>
             <Badge style={{ background: "#2d1b00", color: "#fb923c", border: "1px solid #92400e" }}>🔬 Wireshark/tshark</Badge>
           </div>
+
+          <p style={{ color: "#64748b", fontSize: 12, lineHeight: 1.7, margin: "16px auto 0", maxWidth: 620 }}>
+            O LabNet foi desenvolvido pelo <strong style={{ color: "#94a3b8" }}>Prof. Wendell Rodrigues</strong>,
+            do <strong style={{ color: "#94a3b8" }}>Departamento de Telemática</strong> e do{" "}
+            <strong style={{ color: "#94a3b8" }}>Laboratório de Inovação Tecnológica (LIT)</strong> do IFCE,
+            para o aprendizado prático dos protocolos de roteamento{" "}
+            <strong style={{ color: "#60a5fa" }}>OSPF</strong> (intradomínio, IGP) e{" "}
+            <strong style={{ color: "#a78bfa" }}>BGP</strong> (interdomínio, EGP).
+          </p>
+
+          <button type="button" onClick={() => setShowAbout((v) => !v)}
+            style={{ marginTop: 8, background: "none", border: "none", color: "#0ea5e9", cursor: "pointer", fontSize: 11 }}>
+            {showAbout ? "▲ Ocultar" : "▼ Saiba mais sobre o LabNet"}
+          </button>
+
+          {showAbout && (
+            <div style={{ margin: "10px auto 0", maxWidth: 620, background: "#0a0f1a", border: "1px solid #1e293b", borderRadius: 10, padding: 16, textAlign: "left" }}>
+              <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.8, margin: 0 }}>
+                Cada roteiro sobe roteadores <strong style={{ color: "#e2e8f0" }}>FRR reais</strong>, dentro de
+                topologias isoladas por aluno provisionadas via <strong style={{ color: "#e2e8f0" }}>Containerlab/Docker</strong>.
+                Não é simulação nem slide — é configuração de verdade, com sessões que precisam convergir e
+                falhas que precisam ser diagnosticadas, do mesmo jeito que em uma rede de produção.
+              </p>
+              <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.8, margin: "10px 0 0" }}>
+                A avaliação combina roteiro guiado, previsão do resultado antes de verificar (pra estimular
+                raciocínio, não só digitação), e um desafio final com parâmetros únicos por aluno — cada sessão
+                recebe sua própria combinação de valores, então não dá pra só copiar a resposta do colega.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* ── Student form ── */}
@@ -155,10 +201,14 @@ export function SessionGate({ onSession, onTeacher }) {
                     <div style={{ color: "#60a5fa", fontSize: 11, marginBottom: 6 }}>LAB {selectedLab.id} SELECIONADO</div>
                     <div style={{ color: "#e2e8f0", fontSize: 15, fontWeight: 800, lineHeight: 1.35 }}>{selectedLab.title}</div>
                     <div style={{ color: "#64748b", fontSize: 11, lineHeight: 1.5, marginTop: 6 }}>{selectedLab.topic}</div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
                       <Badge style={{ background: selectedStyle.bg, color: selectedStyle.color, border: `1px solid ${selectedStyle.border}` }}>{selectedLab.difficulty}</Badge>
                       <Badge style={{ background: "#0a0f1a", color: "#94a3b8", border: "1px solid #1e293b" }}>{selectedLab.duration}</Badge>
                       <Badge style={{ background: "#111827", color: "#9ca3af", border: "1px solid #374151" }}>{selectedLab.routerCount || selectedLab.routers?.length || "?"} FRR</Badge>
+                      <button type="button" onClick={() => openPreview(selectedLab.id)}
+                        style={{ marginLeft: "auto", background: "none", border: "1px solid #1e3a5f", color: "#60a5fa", padding: "3px 10px", borderRadius: 20, cursor: "pointer", fontSize: 11 }}>
+                        👁 Ver conteúdo
+                      </button>
                     </div>
                   </div>
                 )}
@@ -268,6 +318,62 @@ export function SessionGate({ onSession, onTeacher }) {
           </div>
         )}
       </div>
+
+      {/* ── Modal de prévia do lab (sem provisionar) ── */}
+      {(previewLab || previewLoading) && (
+        <div onClick={() => setPreviewLab(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(2,8,23,.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ background: "#0f172a", border: "1px solid #1e3a5f", borderRadius: 12, maxWidth: 640, width: "100%", maxHeight: "85vh", overflowY: "auto", padding: 24 }}>
+            {previewLoading ? (
+              <div style={{ color: "#475569", fontSize: 13, textAlign: "center", padding: "30px 0" }}>⟳ Carregando prévia...</div>
+            ) : (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <h2 style={{ margin: 0, color: "#00d4ff", fontSize: 18 }}>{previewLab.title}</h2>
+                  <button onClick={() => setPreviewLab(null)}
+                    style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "3px 9px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>✕</button>
+                </div>
+                {previewLab.topic && <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 14px" }}>{previewLab.topic}</p>}
+
+                {previewLab.scenario && (
+                  <div style={{ background: "#052e16", border: "1px solid #166534", borderRadius: 8, padding: "10px 14px", marginBottom: 18 }}>
+                    <div style={{ color: "#4ade80", fontSize: 10, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>🌍 Cenário Real</div>
+                    <p style={{ color: "#86efac", fontSize: 12, lineHeight: 1.6, margin: 0 }}>{previewLab.scenario}</p>
+                  </div>
+                )}
+
+                {previewLab.steps?.length > 0 && (
+                  <div style={{ marginBottom: 18 }}>
+                    <div style={{ color: "#60a5fa", fontSize: 10, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
+                      📋 Roteiro ({previewLab.steps.length} passos)
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {previewLab.steps.map((s, i) => (
+                        <div key={s.id ?? i} style={{ background: "#020817", border: "1px solid #1e293b", borderRadius: 8, padding: "10px 14px" }}>
+                          <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{i + 1}. {s.title}</div>
+                          {s.theory && <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, margin: 0 }}>{s.theory}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {previewLab.challenge && (
+                  <div>
+                    <div style={{ color: "#fb923c", fontSize: 10, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
+                      🏆 {previewLab.challenge.title || "Desafio Final"}
+                    </div>
+                    <pre style={{ color: "#fcd34d", fontSize: 12, lineHeight: 1.7, whiteSpace: "pre-wrap", fontFamily: "inherit", margin: 0, background: "#1a0a00", border: "1px solid #92400e", borderRadius: 8, padding: 14 }}>
+                      {previewLab.challenge.description}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

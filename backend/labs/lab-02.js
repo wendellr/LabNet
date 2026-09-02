@@ -7,6 +7,7 @@
 const lab = {
   "id": 2,
   "protocol": "bgp",
+  "scenario": "Sua empresa tem duas saídas externas para o mesmo destino remoto, uma mais barata/estável que a outra. O time de rede precisa garantir que TODOS os roteadores internos concordem em preferir a mesma saída — não adianta cada um decidir sozinho. Local Preference resolve exatamente isso: é propagado por iBGP dentro do AS, então uma decisão tomada em um único roteador de borda vira consenso para toda a rede interna.",
   "title": "BGP Local Preference",
   "topic": "Controle de Tráfego de Saída",
   "difficulty": "Iniciante",

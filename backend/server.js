@@ -17,6 +17,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const cors = require('cors');
 const { Resend } = require('resend');
 
@@ -110,6 +111,27 @@ function broadcastDashboard() {
   broadcast({ type: 'dashboard', snapshot }, 'teacher');
 }
 
+// Saúde do servidor (CPU/memória) — usa só o módulo `os` nativo, síncrono e
+// barato, então pode entrar direto no snapshot do dashboard sem virar async.
+function getServerHealth() {
+  const cpuCount = os.cpus().length || 1;
+  const [load1, load5, load15] = os.loadavg();
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+
+  return {
+    cpuCount,
+    loadAvg1: load1,
+    loadAvg5: load5,
+    loadAvg15: load15,
+    loadPct: Math.min(100, Math.round((load1 / cpuCount) * 100)),
+    totalMemGB: +(totalMem / 1e9).toFixed(1),
+    usedMemGB: +(usedMem / 1e9).toFixed(1),
+    memPct: Math.min(100, Math.round((usedMem / totalMem) * 100)),
+  };
+}
+
 function getDashboardSnapshot() {
   const now = Date.now();
   const list = [];
@@ -136,6 +158,7 @@ function getDashboardSnapshot() {
     maxStudents: CONFIG.MAX_STUDENTS,
     serverTime: now,
     recentEvents: eventLog.slice(-50),
+    serverHealth: getServerHealth(),
   };
 }
 
@@ -703,7 +726,7 @@ setInterval(async () => {
 // Criar nova sessão de lab
 app.post('/api/session', async (req, res) => {
   const { studentName, labId, matricula } = req.body;
-  if (!studentName || !labId) return res.status(400).json({ error: 'studentName e labId obrigatórios' });
+  if (!studentName || labId === undefined || labId === null) return res.status(400).json({ error: 'studentName e labId obrigatórios' });
 
   const active = [...sessions.values()].filter(s => ['provisioning','running','idle'].includes(s.status));
   if (active.length >= CONFIG.MAX_STUDENTS) {
@@ -1259,12 +1282,24 @@ app.get('/api/labs', (req, res) => {
   res.json(meta);
 });
 
+// Monta a visão pública de um lab (sem frr_configs, variables e o gabarito
+// answerKey — nenhum dos dois é necessário no frontend, e answerKey nunca
+// deveria vazar respostas corretas para quem só está consultando a API).
+function publicLabView(lab) {
+  const { frr_configs, variables, answerKey, ...rest } = lab;
+  return { ...rest, protocol: lab.protocol || 'bgp', topologyDetails: summarizeTopology(lab) };
+}
+
+// Prévia genérica de um lab, sem sessão — usada tanto pela consulta direta
+// por labId quanto pelo botão "Ver conteúdo" do aluno anônimo no SessionGate.
+// Labs com `variables` são materializados com um seed fixo só para exibição
+// (nunca usado para provisionar de verdade), assim a prévia mostra valores
+// de exemplo resolvidos em vez de "{{tokens}}" literais.
+const PREVIEW_SESSION = { id: 'preview' };
 app.get('/api/labs/:id', (req, res) => {
   const lab = LABS[parseInt(req.params.id)];
   if (!lab) return res.status(404).json({ error: 'Lab não encontrado' });
-  // Retorna tudo exceto frr_configs (são grandes) e variables (só relevantes internamente)
-  const { frr_configs, variables, ...rest } = lab;
-  res.json({ ...rest, protocol: lab.protocol || 'bgp', topologyDetails: summarizeTopology(lab) });
+  res.json(publicLabView(materializeLab(lab, PREVIEW_SESSION)));
 });
 
 // Detalhe do lab visto por uma sessão específica — usa a versão materializada
@@ -1274,8 +1309,7 @@ app.get('/api/session/:id/lab', (req, res) => {
   if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
   const lab = session.materializedLab || LABS[session.labId];
   if (!lab) return res.status(404).json({ error: 'Lab não encontrado' });
-  const { frr_configs, variables, ...rest } = lab;
-  res.json({ ...rest, protocol: lab.protocol || 'bgp', topologyDetails: summarizeTopology(lab) });
+  res.json(publicLabView(lab));
 });
 
 app.get('/api/health', (req, res) => {

@@ -12,6 +12,7 @@
 module.exports = {
   id: 8,
   protocol: "bgp",
+  scenario: "Uma empresa contrata um provedor de trânsito IP simples (que só encaminha pacotes, sem participar do BGP) para conectar dois de seus próprios ASes. Internamente, o time de rede quer um caminho primário claramente preferido (via Weight, local a cada roteador) e um caminho de backup que só deve ser usado se o primário cair, sinalizado aos vizinhos externos via AS-Path Prepend.",
   enabled: true,
   title: "AS-Path Prepend, Weight e Default Route",
   topic: "eBGP Multihop e Preferência Local",
