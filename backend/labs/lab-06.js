@@ -217,9 +217,9 @@ router bgp 3
     },
     {
       id: "send_community",
-      label: "R1 envia communities aos vizinhos",
+      label: "R2 recebe a community enviada por R1 (propagação efetiva confirmada)",
       weight: 10,
-      check: { router: "R1", cmdPattern: "show running-config", outputPattern: "send-community" },
+      check: { router: "R2", cmdPattern: "show ip bgp {{loA}}", outputPattern: "Community: no-advertise" },
     },
     {
       id: "default_originate",
