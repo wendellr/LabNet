@@ -223,13 +223,13 @@ router bgp 1
       id: "ospf_wins_10_2_2",
       label: "R4 instala a rota OSPF (não eBGP) para 10.2.2.0/24 — backdoor funcionando",
       weight: 15,
-      check: { router: "R4", cmdPattern: "show ip route 10\\.2\\.2\\.0/24", outputPattern: "Known via \"ospf\"" },
+      check: { router: "R4", cmdPattern: "show ip route 10\\.2\\.2\\.0/24", outputPattern: "Known via \"ospf\", distance \\d+, metric \\d+, best" },
     },
     {
       id: "ospf_wins_10_3_3",
       label: "R4 instala a rota OSPF (não eBGP) para 10.3.3.0/24 — backdoor funcionando",
       weight: 15,
-      check: { router: "R4", cmdPattern: "show ip route 10\\.3\\.3\\.0/24", outputPattern: "Known via \"ospf\"" },
+      check: { router: "R4", cmdPattern: "show ip route 10\\.3\\.3\\.0/24", outputPattern: "Known via \"ospf\", distance \\d+, metric \\d+, best" },
     },
   ],
 
@@ -368,7 +368,9 @@ No R4:
       title: "Aplicar BGP Backdoor",
       theory: `Por padrão, eBGP tem distância administrativa 20, enquanto OSPF tem 110. Mesmo que exista um caminho interno OSPF, a rota eBGP normalmente vence.
 
-O comando "network PREFIX backdoor" marca aquele prefixo como backdoor no BGP. O efeito prático é aumentar a distância administrativa da rota eBGP específica para 200. Assim, se existir uma rota IGP para o mesmo prefixo, a rota IGP passa a ser preferida. Se o IGP desaparecer, o BGP ainda serve como fallback.`,
+O comando "network PREFIX backdoor" marca aquele prefixo como backdoor no BGP. O efeito prático é aumentar a distância administrativa da rota eBGP específica para 200. Assim, se existir uma rota IGP para o mesmo prefixo, a rota IGP passa a ser preferida. Se o IGP desaparecer, o BGP ainda serve como fallback.
+
+Detalhe importante: marcar o prefixo como backdoor NÃO recalcula na hora a distância de uma rota BGP que já estava instalada. Um simples "clear bgp * soft" (que só reenvia políticas de saída) não é suficiente — é preciso um "clear bgp *" (reset completo da sessão) para a nova distância administrativa realmente ser aplicada e a rota OSPF assumir o lugar.`,
       description: `Configure em R4:
 
   configure terminal
@@ -377,10 +379,12 @@ O comando "network PREFIX backdoor" marca aquele prefixo como backdoor no BGP. O
     network 10.2.2.0/24 backdoor
     network 10.3.3.0/24 backdoor
   end
+  clear bgp *
 
 Depois verifique se R4 passa a preferir as rotas via OSPF para 10.2.2.0/24 e 10.3.3.0/24.`,
       commands: [
         { router: "R4", cmd: "show running-config", desc: "Confirme network ... backdoor" },
+        { router: "R4", cmd: "clear bgp *", desc: "Reset completo da sessão — necessário para a nova distância valer" },
         { router: "R4", cmd: "show ip bgp 10.2.2.0/24", desc: "A rota BGP continua existindo" },
         { router: "R4", cmd: "show ip route 10.2.2.0/24", desc: "A rota instalada deve preferir OSPF se disponível" },
         { router: "R4", cmd: "show ip route 10.3.3.0/24", desc: "Repita a verificação para 10.3.3.0/24" },
