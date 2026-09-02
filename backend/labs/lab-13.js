@@ -59,7 +59,7 @@ const lab = {
       id: "new_network_visible_r1",
       label: "R1 (do outro lado da cadeia) já enxerga a rede nova via OSPF",
       weight: 40,
-      check: { router: "R1", cmdPattern: "show ip route {{newNet}}\\.0", outputPattern: "{{newNet}}\\.0" },
+      check: { router: "R1", cmdPattern: "show ip route {{newNet}}\\.1", outputPattern: "{{newNet}}\\.1" },
     },
   ],
 
@@ -132,13 +132,13 @@ const lab = {
     {
       id: 3,
       title: "Anunciar uma rede nova",
-      theory: "Quando a empresa cresce e uma rede nova precisa entrar no domínio OSPF, o processo é simples: qualquer roteador com uma interface (ou endereço adicional) naquela faixa adiciona um 'network <prefixo> area <área>' correspondente dentro de 'router ospf'. Não é preciso configurar nada nos outros roteadores — a informação se propaga automaticamente para toda a área através das LSAs.",
+      theory: "Quando a empresa cresce e uma rede nova precisa entrar no domínio OSPF, o processo é simples: qualquer roteador com uma interface (ou endereço adicional) naquela faixa adiciona um 'network <prefixo> area <área>' correspondente dentro de 'router ospf'. Não é preciso configurar nada nos outros roteadores — a informação se propaga automaticamente para toda a área através das LSAs.\n\nDetalhe importante do FRR: endereços em interface de loopback são sempre anunciados como rota de HOST (/32), não importa a máscara configurada — mesmo cobrindo com 'network .../24 area 0'. Por isso, depois de configurar, procure pelo endereço /32 específico na tabela de rotas, não pelo /24.",
       description: "Em R3, adicione um endereço adicional no loopback representando a rede nova e cubra com 'network area 0'.\n\nExemplo em R3:\n  configure terminal\n  interface lo\n   ip address {{newNet}}.1/32\n  exit\n  router ospf\n   network {{newNet}}.0/24 area 0\n  end",
       commands: [
         { cmd: "show running-config", router: "R3", desc: "Confirme a rede nova configurada" },
-        { cmd: "show ip route {{newNet}}.0/24", router: "R1", desc: "Confirme que R1 já enxerga a rede nova" },
+        { cmd: "show ip route {{newNet}}.1/32", router: "R1", desc: "Confirme que R1 já enxerga a rede nova (é uma rota /32, não /24 — loopback)" },
       ],
-      expected: "R1, do outro lado da cadeia, já mostra uma rota OSPF para a rede nova — sem nenhuma configuração adicional em R1 ou R2.",
+      expected: "R1, do outro lado da cadeia, já mostra uma rota OSPF /32 para {{newNet}}.1 — sem nenhuma configuração adicional em R1 ou R2.",
       predict: {
         id: "predict_step2",
         prompt: "Depois de configurar a rede nova só em R3, você espera que ela apareça na tabela de rotas de R1? Por quê?",
