@@ -341,6 +341,7 @@ hostname R1
 !
 interface lo
  ip address 1.1.1.1/32
+ ip address 1.1.1.2/24
 !
 interface eth1
  ip address 10.1.1.1/30
@@ -372,6 +373,7 @@ hostname R2
 !
 interface lo
  ip address 2.2.2.2/32
+ ip address 2.2.2.3/24
 !
 interface eth1
  ip address 10.1.1.2/30
@@ -403,6 +405,7 @@ hostname R3
 !
 interface lo
  ip address 3.3.3.3/32
+ ip address 3.3.3.4/24
 !
 interface eth1
  ip address 10.2.1.2/30
@@ -434,6 +437,7 @@ hostname R4
 !
 interface lo
  ip address 4.4.4.4/32
+ ip address 4.4.4.5/24
 !
 interface eth1
  ip address 10.3.1.2/30
