@@ -1214,9 +1214,9 @@ async function evaluateAnswers(session, answers) {
       const matched  = key.required.filter(kw => ansLower.includes(kw.toLowerCase()));
 
       if (key.anyOf) {
-        // Qualquer uma das palavras-chave já vale
+        // Qualquer uma das palavras-chave já vale — nota cheia ao passar
         passed = matched.length >= 1;
-        pts    = passed ? Math.round((matched.length / key.required.length) * (key.points || 10)) : 0;
+        pts    = passed ? (key.points || 10) : 0;
       } else {
         // Todas as palavras-chave são obrigatórias
         passed = matched.length === key.required.length;

@@ -27,6 +27,10 @@ module.exports = {
     ["R3", "eth3", "R4", "eth1"],
   ],
 
+  variables: {
+    prependArg: { pool: ["3 3", "3 3 3", "3 3 3 3"] },
+  },
+
   frr_configs: {
     R1: `frr version 9.0
 frr defaults traditional
@@ -152,14 +156,14 @@ router bgp 4
       label: "Sessões BGP observadas",
       router: "R1",
       cmdContains: "show bgp summary",
-      outputContains: "Established",
+      outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+",
     },
     {
       id: "lab5_prepend_seen",
       label: "AS-PATH prepend visto em R1",
       router: "R1",
       cmdContains: "show ip bgp 172.16.4.0",
-      outputPattern: "3 3 3",
+      outputPattern: "{{prependArg}}",
     },
     {
       id: "lab5_ignore_config_seen",
@@ -182,7 +186,7 @@ router bgp 4
       id: "bgp_established",
       label: "Sessões BGP verificadas",
       weight: 10,
-      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "Established" },
+      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+" },
     },
     {
       id: "prepend_configured",
@@ -194,7 +198,7 @@ router bgp 4
       id: "prepend_visible",
       label: "R1 observou caminho artificialmente mais longo",
       weight: 15,
-      check: { router: "R1", cmdPattern: "show ip bgp 172\\.16\\.4\\.0", outputPattern: "3 3 3" },
+      check: { router: "R1", cmdPattern: "show ip bgp 172\\.16\\.4\\.0", outputPattern: "{{prependArg}}" },
     },
     {
       id: "aspath_ignore_configured",
@@ -223,12 +227,26 @@ router bgp 4
   ],
 
   answerKey: {
-    q1: { type: "radio", correct: "Ele deixa de usar o tamanho do AS-PATH como critério de desempate na seleção do best path", points: 15 },
-    q2: { type: "radio", correct: "No R3, aplicado outbound para o vizinho R1", points: 15 },
-    q3: { type: "radio", correct: "Porque o caminho direto passa a parecer pior quando o AS 3 é repetido no AS-PATH", points: 15 },
-    q4: { type: "radio", correct: "No R3, porque ele conhece os prefixos 172.16.x.0/24 e pode anunciar um resumo /16", points: 15 },
-    q5: { type: "radio", correct: "Anuncia o prefixo agregado e suprime os prefixos mais específicos para aquele anúncio", points: 20 },
-    q6: { type: "radio", correct: "Reduzir a quantidade de rotas anunciadas, simplificando a tabela BGP dos vizinhos", points: 20 },
+    predict_step1: {
+      type: "keywords",
+      required: ["r3", "direto", "curto", "menor"],
+      anyOf: true,
+      points: 10,
+      hint: "O BGP prefere, por padrão, o caminho com o AS-PATH mais curto — compare 'via R3' (2 ASes) com 'via R2 e R3' (3 ASes).",
+    },
+    predict_step3: {
+      type: "keywords",
+      required: ["não", "nao", "router-id", "antiga", "antigo", "oldest"],
+      anyOf: true,
+      points: 10,
+      hint: "Ignorar o comprimento do AS-PATH só remove ESSE critério da comparação — os critérios seguintes (origem, MED, rota mais antiga, router-id do vizinho) continuam valendo para o desempate.",
+    },
+    q1: { type: "radio", correct: "Ele deixa de usar o tamanho do AS-PATH como critério de desempate na seleção do best path", points: 12 },
+    q2: { type: "radio", correct: "No R3, aplicado outbound para o vizinho R1", points: 12 },
+    q3: { type: "radio", correct: "Porque o caminho direto passa a parecer pior quando o AS 3 é repetido no AS-PATH", points: 12 },
+    q4: { type: "radio", correct: "No R3, porque ele conhece os prefixos 172.16.x.0/24 e pode anunciar um resumo /16", points: 12 },
+    q5: { type: "radio", correct: "Anuncia o prefixo agregado e suprime os prefixos mais específicos para aquele anúncio", points: 16 },
+    q6: { type: "radio", correct: "Reduzir a quantidade de rotas anunciadas, simplificando a tabela BGP dos vizinhos", points: 16 },
   },
 
   steps: [
@@ -240,30 +258,32 @@ router bgp 4
 - Caminho direto via R3: AS-PATH "3 4"
 - Caminho indireto via R2 e R3: AS-PATH "2 3 4"
 
-Por padrão, o BGP prefere o menor AS-PATH. Portanto, antes de qualquer política, R1 deve preferir o caminho direto via R3.`,
-      description: `Verifique as sessões BGP e observe o prefixo 172.16.4.0/24 em R1.
-
-O objetivo inicial é entender qual caminho é escolhido antes de alterar a política.`,
+Por padrão, o BGP prefere o caminho com o AS-PATH mais curto, quando os demais atributos (weight, local preference, origem) são iguais.`,
+      description: `Antes de rodar os comandos, responda à pergunta de previsão abaixo. Depois verifique as sessões BGP e observe o prefixo 172.16.4.0/24 em R1.`,
       commands: [
         { router: "R1", cmd: "show bgp summary", desc: "Confirme as sessões BGP de R1" },
         { router: "R1", cmd: "show ip bgp 172.16.4.0/24", desc: "Veja os dois caminhos para a rede de R4" },
         { router: "R1", cmd: "show ip bgp", desc: "Tabela BGP completa em R1" },
       ],
       expected: "R1 deve preferir o caminho via R3 porque o AS-PATH direto é menor.",
+      predict: {
+        id: "predict_step1",
+        prompt: "Antes de verificar, qual caminho você espera que R1 prefira até 172.16.4.0/24 — o direto via R3 ou o indireto via R2 e R3? Por quê?",
+      },
     },
     {
       id: 2,
       title: "Tornar o caminho direto menos atrativo",
       theory: `AS-Path Prepend torna um caminho menos preferido repetindo o próprio ASN no atributo AS-PATH.
 
-Quando R3 anuncia a rota de R4 para R1 com "set as-path prepend 3 3 3", o caminho direto deixa de parecer "3 4" e passa a parecer algo como "3 3 3 3 4".
+Quando R3 anuncia a rota de R4 para R1 com "set as-path prepend {{prependArg}}", o caminho direto deixa de ter o AS-PATH mais curto — o AS 3 passa a se repetir no atributo recebido por R1.
 
 Isso não derruba a sessão BGP; é uma política aplicada em anúncios de saída. Depois de aplicar a route-map, use "clear bgp * soft out" para reenviar os anúncios com a nova política.`,
       description: `Configure em R3 uma route-map outbound para R1:
 
   configure terminal
   route-map PREPEND_TO_R1 permit 10
-   set as-path prepend 3 3 3
+   set as-path prepend {{prependArg}}
   exit
   router bgp 3
    address-family ipv4 unicast
@@ -302,6 +322,10 @@ Depois compare o best path para 172.16.4.0/24 antes e depois.`,
         { router: "R1", cmd: "show ip bgp 172.16.4.0/24", desc: "Observe qual caminho ficou como best path" },
       ],
       expected: "R1 deve deixar de penalizar o caminho direto apenas por ele ter AS-PATH mais longo.",
+      predict: {
+        id: "predict_step3",
+        prompt: "Depois de configurar 'bgp bestpath as-path ignore' em R1, o caminho direto via R3 necessariamente volta a ser o melhor caminho? O que decide o desempate agora que o AS-PATH deixou de contar?",
+      },
     },
     {
       id: 4,

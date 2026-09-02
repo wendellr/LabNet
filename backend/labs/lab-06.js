@@ -27,6 +27,12 @@ module.exports = {
     ["R3", "eth3", "R4", "eth1"],
   ],
 
+  variables: {
+    prependArg: { pool: ["3 3", "3 3 3", "3 3 3 3"] },
+    loA: { pool: ["192.168.11.1", "192.168.22.1", "192.168.33.1"] },
+    loB: { pool: ["172.20.11.1", "172.20.22.1", "172.20.33.1"] },
+  },
+
   frr_configs: {
     R1: `frr version 9.0
 frr defaults traditional
@@ -153,20 +159,20 @@ router bgp 3
       label: "Sessões BGP observadas",
       router: "R1",
       cmdContains: "show bgp summary",
-      outputContains: "Established",
+      outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+",
     },
     {
       id: "lab6_prepend_seen",
       label: "AS-PATH prepend observado em R1",
       router: "R1",
       cmdContains: "show ip bgp 10.4.4.0",
-      outputPattern: "3 3 3",
+      outputPattern: "{{prependArg}}",
     },
     {
       id: "lab6_community_seen",
       label: "Community no-advertise observada",
       router: "R2",
-      cmdContains: "show ip bgp 192.168.1.1",
+      cmdContains: "show ip bgp {{loA}}",
       outputContains: "no-advertise",
     },
     {
@@ -183,7 +189,7 @@ router bgp 3
       id: "bgp_established",
       label: "Sessões BGP verificadas",
       weight: 10,
-      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "Established" },
+      check: { router: "R1", cmdPattern: "show bgp summary", outputPattern: "\\d{2}:\\d{2}:\\d{2}\\s+\\d+" },
     },
     {
       id: "next_hop_self",
@@ -195,7 +201,7 @@ router bgp 3
       id: "prepend_configured",
       label: "AS-Path Prepend aplicado por R3 para R1",
       weight: 15,
-      check: { router: "R3", cmdPattern: "show running-config", outputPattern: "set as-path prepend 3 3" },
+      check: { router: "R3", cmdPattern: "show running-config", outputPattern: "set as-path prepend {{prependArg}}" },
     },
     {
       id: "selective_filters",
@@ -230,12 +236,26 @@ router bgp 3
   ],
 
   answerKey: {
-    q1: { type: "radio", correct: "Ele reescreve o next-hop das rotas enviadas ao peer iBGP para que R4 alcance os prefixos externos", points: 15 },
-    q2: { type: "radio", correct: "Outbound em R3 para o vizinho R1", points: 15 },
-    q3: { type: "radio", correct: "Ela impede que a rota seja anunciada a qualquer peer BGP", points: 20 },
-    q4: { type: "radio", correct: "Porque communities só são enviadas ao vizinho quando send-community está habilitado", points: 15 },
-    q5: { type: "radio", correct: "default-originate", points: 15 },
-    q6: { type: "radio", correct: "Prefix-list seleciona a rota; route-map decide negar, permitir ou alterar atributos", points: 20 },
+    predict_step2: {
+      type: "keywords",
+      required: ["r2", "via r2", "indireto"],
+      anyOf: true,
+      points: 10,
+      hint: "O prepend torna o caminho direto via R3 mais longo que o caminho via R2 — o AS-PATH mais curto passa a ser o via R2.",
+    },
+    predict_step4: {
+      type: "keywords",
+      required: ["não", "nao", "todos", "qualquer", "ibgp"],
+      anyOf: true,
+      points: 10,
+      hint: "no-advertise é uma community well-known BGP-wide: ela bloqueia o reanúncio para QUALQUER peer, inclusive peers iBGP como R4 — não é uma restrição só de eBGP.",
+    },
+    q1: { type: "radio", correct: "Ele reescreve o next-hop das rotas enviadas ao peer iBGP para que R4 alcance os prefixos externos", points: 12 },
+    q2: { type: "radio", correct: "Outbound em R3 para o vizinho R1", points: 12 },
+    q3: { type: "radio", correct: "Ela impede que a rota seja anunciada a qualquer peer BGP", points: 16 },
+    q4: { type: "radio", correct: "Porque communities só são enviadas ao vizinho quando send-community está habilitado", points: 12 },
+    q5: { type: "radio", correct: "default-originate", points: 12 },
+    q6: { type: "radio", correct: "Prefix-list seleciona a rota; route-map decide negar, permitir ou alterar atributos", points: 16 },
   },
 
   steps: [
@@ -263,14 +283,14 @@ R3 tem eBGP com R1 e R2, e iBGP com R4. Quando um roteador eBGP aprende uma rota
       title: "Forçar R1 a preferir o caminho via R2",
       theory: `AS-Path Prepend aumenta artificialmente o tamanho do AS-PATH anunciado a um vizinho. O BGP prefere AS-PATH mais curto quando critérios anteriores empatam.
 
-Neste lab, R1 pode chegar a 10.4.4.0/24 diretamente via R3 ou indiretamente via R2->R3. Como o caminho via R3 é mais curto, ele tende a ser preferido. Ao fazer R3 anunciar 10.4.4.0/24 para R1 com "set as-path prepend 3 3", esse caminho passa a parecer mais longo.`,
+Neste lab, R1 pode chegar a 10.4.4.0/24 diretamente via R3 (AS-PATH de 1 salto, já que R3 e R4 estão no mesmo AS) ou indiretamente via R2->R3 (AS-PATH de 2 saltos: AS 2, AS 3). Ao fazer R3 anunciar 10.4.4.0/24 para R1 com "set as-path prepend {{prependArg}}", o caminho direto passa a repetir o AS 3 e fica artificialmente mais longo que os 2 saltos do caminho via R2.`,
       description: `Configure em R3:
 
   configure terminal
   ip prefix-list R4_LAN seq 10 permit 10.4.4.0/24
   route-map PATH_PREPEND permit 10
    match ip address prefix-list R4_LAN
-   set as-path prepend 3 3
+   set as-path prepend {{prependArg}}
   route-map PATH_PREPEND permit 20
   router bgp 3
    address-family ipv4 unicast
@@ -278,13 +298,17 @@ Neste lab, R1 pode chegar a 10.4.4.0/24 diretamente via R3 ou indiretamente via 
   end
   clear bgp * soft out
 
-Depois verifique em R1.`,
+Antes de rodar o último comando, responda à pergunta de previsão abaixo. Depois verifique em R1.`,
       commands: [
         { router: "R3", cmd: "show running-config", desc: "Confirme a route-map de prepend" },
         { router: "R3", cmd: "clear bgp * soft out", desc: "Reenvia anúncios a R1" },
         { router: "R1", cmd: "show ip bgp 10.4.4.0/24", desc: "Compare os AS-PATHs via R2 e via R3" },
       ],
       expected: "R1 deve ver AS 3 repetido no caminho via R3 e preferir o caminho via R2.",
+      predict: {
+        id: "predict_step2",
+        prompt: "Depois de aplicar esse AS-Path Prepend em R3, qual caminho você espera que R1 prefira até 10.4.4.0/24 — o direto via R3 ou o indireto via R2?",
+      },
     },
     {
       id: 3,
@@ -296,11 +320,11 @@ Uma route-map outbound pode negar um prefixo para um vizinho e permitir outros. 
 
   configure terminal
   interface lo
-   ip address 192.168.1.1/32
-   ip address 172.16.1.1/32
+   ip address {{loA}}/32
+   ip address {{loB}}/32
   exit
-  ip prefix-list LO-192 seq 10 permit 192.168.1.1/32
-  ip prefix-list LO-172 seq 10 permit 172.16.1.1/32
+  ip prefix-list LO-192 seq 10 permit {{loA}}/32
+  ip prefix-list LO-172 seq 10 permit {{loB}}/32
   route-map OUT_TO_R2 deny 10
    match ip address prefix-list LO-172
   route-map OUT_TO_R2 permit 20
@@ -309,8 +333,8 @@ Uma route-map outbound pode negar um prefixo para um vizinho e permitir outros. 
   route-map OUT_TO_R3 permit 20
   router bgp 1
    address-family ipv4 unicast
-    network 192.168.1.1/32
-    network 172.16.1.1/32
+    network {{loA}}/32
+    network {{loB}}/32
     neighbor 10.0.12.2 route-map OUT_TO_R2 out
     neighbor 10.0.13.2 route-map OUT_TO_R3 out
   end
@@ -321,7 +345,7 @@ Uma route-map outbound pode negar um prefixo para um vizinho e permitir outros. 
         { router: "R1", cmd: "show ip bgp neighbors 10.0.12.2 advertised-routes", desc: "Veja o que R1 anuncia para R2" },
         { router: "R1", cmd: "show ip bgp neighbors 10.0.13.2 advertised-routes", desc: "Veja o que R1 anuncia para R3" },
       ],
-      expected: "R2 recebe 192.168.1.1/32; R3 recebe 172.16.1.1/32.",
+      expected: "R2 recebe {{loA}}/32; R3 recebe {{loB}}/32.",
     },
     {
       id: 4,
@@ -345,14 +369,20 @@ Importante: em BGP, communities não são necessariamente enviadas por padrão e
     neighbor 10.0.12.2 send-community
     neighbor 10.0.13.2 send-community
   end
-  clear bgp * soft out`,
+  clear bgp * soft out
+
+Antes de checar R4, responda à pergunta de previsão abaixo.`,
       commands: [
         { router: "R1", cmd: "show running-config", desc: "Confirme set community e send-community" },
-        { router: "R2", cmd: "show ip bgp 192.168.1.1/32", desc: "R2 deve ver community no-advertise" },
-        { router: "R3", cmd: "show ip bgp 172.16.1.1/32", desc: "R3 deve ver community no-advertise" },
+        { router: "R2", cmd: "show ip bgp {{loA}}/32", desc: "R2 deve ver community no-advertise" },
+        { router: "R3", cmd: "show ip bgp {{loB}}/32", desc: "R3 deve ver community no-advertise" },
         { router: "R4", cmd: "show ip bgp", desc: "R4 não deve aprender esses /32 por BGP" },
       ],
-      expected: "R2 e R3 recebem seus /32 marcados com no-advertise; R4 não aprende os /32 por BGP.",
+      expected: "R2 e R3 recebem seus /32 marcados com no-advertise; R4 não aprende os /32 por BGP — a community bloqueia o reanúncio para QUALQUER peer, inclusive o iBGP com R4.",
+      predict: {
+        id: "predict_step4",
+        prompt: "A community no-advertise foi aplicada só nas route-maps de saída de R1 para R2 e R3. Você espera que R4 (peer iBGP de R3) aprenda esses dois /32 por BGP? Por quê?",
+      },
     },
     {
       id: 5,
@@ -386,7 +416,7 @@ Depois verifique em R4 se a rota 0.0.0.0/0 foi aprendida via BGP.`,
     description: `Complete as políticas do lab:
 
 1. R1 deve preferir chegar em 10.4.4.0/24 via R2, usando AS-Path Prepend em R3 para o vizinho R1.
-2. R1 deve anunciar 192.168.1.1/32 somente a R2 e 172.16.1.1/32 somente a R3.
+2. R1 deve anunciar {{loA}}/32 somente a R2 e {{loB}}/32 somente a R3.
 3. Esses /32 devem ser marcados com community no-advertise.
 4. R1 deve anunciar rota default para R2 e R3.
 
