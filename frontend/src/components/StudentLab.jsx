@@ -929,26 +929,32 @@ function WiresharkTab({ labId, sessionId, session }) {
   const protocol = labData?.protocol || "bgp";
   const PROTOCOL_TITLE = { bgp: "BGP", ospf: "OSPF", "bgp+ospf": "BGP + OSPF" }[protocol] || "BGP";
   const PROTOCOL_HINT = {
-    bgp: "Inspect BGP OPEN · UPDATE · KEEPALIVE · NOTIFICATION",
-    ospf: "Inspect OSPF HELLO · DBD · LS_UPDATE · LS_ACK",
-    "bgp+ospf": "Alterne entre BGP e OSPF no seletor acima do capturador",
+    bgp: "OPEN · UPDATE · KEEPALIVE · NOTIFICATION",
+    ospf: "HELLO · DBD · LS-REQUEST · LS-UPDATE · LS-ACK",
+    "bgp+ospf": "OSPF e BGP — escolha o protocolo na barra do capturador",
   }[protocol] || "";
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ background: "#0a0f1a", borderBottom: "1px solid #1e293b", padding: "8px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-        <span style={{ color: "#fb923c", fontSize: 12, fontWeight: "bold" }}>🔬 Analisador de Pacotes {PROTOCOL_TITLE}</span>
+        <span style={{ color: "#fb923c", fontSize: 12, fontWeight: "bold" }}>🔬 Captura de Pacotes {PROTOCOL_TITLE}</span>
         <span style={{ color: "#475569", fontSize: 10 }}>
           {PROTOCOL_HINT}
         </span>
       </div>
       <div style={{ flex: 1, overflow: "hidden" }}>
-        <PacketAnalyzer
-          sessionId={sessionId}
-          lab={labData}
-          protocol={protocol}
-          containers={session?.containers || []}
-        />
+        {/* Só monta com o lab carregado — senão o capturador nasce como BGP
+            antes de saber que o lab é OSPF */}
+        {labData ? (
+          <PacketAnalyzer
+            sessionId={sessionId}
+            lab={labData}
+            protocol={protocol}
+            containers={session?.containers || []}
+          />
+        ) : (
+          <div style={{ color: "#475569", fontSize: 12, padding: 24 }}>Carregando…</div>
+        )}
       </div>
     </div>
   );

@@ -1651,6 +1651,114 @@ function createCommandCapture(session, router) {
   };
 }
 
+// ─── Captura real de pacotes (aba Wireshark) ──────────────────────────────
+// tcpdump roda no HOST, dentro do namespace de rede do container (nsenter) —
+// a imagem FRR não traz tcpdump. A saída decodificada (-vv) é quebrada em
+// pacotes e enviada por WebSocket; o mesmo processo grava um .pcap (-w +
+// --print) que o aluno pode baixar e abrir no Wireshark de verdade.
+//
+// Nada do que vem do cliente entra na linha de comando sem validação:
+// roteador precisa ser um container da sessão, interface só `any`/`ethN`
+// (eth0 é gerência e fica de fora) e o filtro é escolhido de uma lista fixa.
+const CAPTURE_FILTERS = {
+  ospf: 'proto ospf',
+  // Só segmentos BGP com payload ou SYN/FIN/RST — sem os ACKs vazios do TCP
+  bgp: 'tcp port 179 and (((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0 or (tcp[tcpflags] & (tcp-syn|tcp-fin|tcp-rst)) != 0)',
+};
+CAPTURE_FILTERS.all = `(${CAPTURE_FILTERS.ospf}) or (${CAPTURE_FILTERS.bgp})`;
+const CAPTURE_MAX_SECONDS = 600;
+const CAPTURE_MAX_PACKETS = 3000;
+const captureProcesses = new Map(); // sessionId -> processo tcpdump ativo
+const PACKET_HEADER_RE = /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ /;
+
+function capturePcapPath(session, router) {
+  return path.join(session.labDir || CONFIG.LAB_BASE_DIR, `capture-${router}.pcap`);
+}
+
+function stopCapture(sessionId) {
+  const proc = captureProcesses.get(sessionId);
+  if (proc) {
+    try { proc.kill('SIGTERM'); } catch {}
+    captureProcesses.delete(sessionId);
+  }
+}
+
+async function startCapture(ws, session, router, iface, filterKey) {
+  const containerName = `clab-${session.id}-${router}`;
+  const send = (msg) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); };
+
+  if (!session.containers.includes(containerName)) return send({ type: 'error', message: `Roteador ${router} não existe nesta sessão` });
+  if (!/^(any|eth[1-9]\d?)$/.test(iface)) return send({ type: 'error', message: 'Interface inválida' });
+  const filter = CAPTURE_FILTERS[filterKey];
+  if (!filter) return send({ type: 'error', message: 'Filtro inválido' });
+
+  let pid;
+  try {
+    const { stdout } = await execAsync(`sudo docker inspect -f '{{.State.Pid}}' ${shellQuote(containerName)}`);
+    pid = parseInt(stdout.trim(), 10);
+    if (!pid) throw new Error('PID não encontrado');
+  } catch (e) {
+    return send({ type: 'error', message: 'Não foi possível acessar o roteador: ' + e.message });
+  }
+
+  stopCapture(session.id);
+  const pcapPath = capturePcapPath(session, router);
+  const proc = spawn('sudo', [
+    'timeout', String(CAPTURE_MAX_SECONDS),
+    'nsenter', '-t', String(pid), '-n',
+    'tcpdump', '-i', iface, '-n', '-vv', '-tttt', '-l', '-U',
+    '-c', String(CAPTURE_MAX_PACKETS),
+    '-w', pcapPath, '--print',
+    filter,
+  ]);
+  captureProcesses.set(session.id, proc);
+  logEvent('capture_start', { sessionId: session.id, student: session.studentName, router, iface, filter: filterKey });
+  send({ type: 'started', router, iface, filter: filterKey, maxSeconds: CAPTURE_MAX_SECONDS, maxPackets: CAPTURE_MAX_PACKETS });
+
+  // Um pacote = linha de cabeçalho (timestamp) + linhas seguintes até o próximo
+  let buf = '';
+  let current = null;
+  let flushTimer = null;
+  const emit = () => {
+    if (current) send({ type: 'packet', lines: current });
+    current = null;
+  };
+  proc.stdout.on('data', (chunk) => {
+    buf += chunk.toString('utf8');
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (PACKET_HEADER_RE.test(line)) { emit(); current = [line]; }
+      else if (current && line.trim()) current.push(line);
+    }
+    // tcpdump não avisa o fim de um pacote — fecha após um instante sem linhas
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(emit, 250);
+  });
+  proc.stderr.on('data', (chunk) => {
+    const text = chunk.toString('utf8');
+    // "listening on..." e o resumo final são informativos, não erro
+    if (/error|permission|no such device|syntax/i.test(text)) send({ type: 'error', message: text.trim() });
+  });
+  proc.on('close', () => {
+    clearTimeout(flushTimer);
+    emit();
+    if (captureProcesses.get(session.id) === proc) captureProcesses.delete(session.id);
+    send({ type: 'stopped', pcap: fsSync.existsSync(pcapPath) });
+  });
+}
+
+// Download do .pcap da última captura num roteador
+app.get('/api/session/:id/capture.pcap', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  const router = String(req.query.router || '').toUpperCase();
+  if (!/^R\d+$/.test(router)) return res.status(400).json({ error: 'Roteador inválido' });
+  const file = capturePcapPath(session, router);
+  if (!fsSync.existsSync(file)) return res.status(404).json({ error: 'Nenhuma captura gravada neste roteador' });
+  res.download(file, `labnet-lab${session.labId}-${router}.pcap`);
+});
+
 // ─── WebSocket ─────────────────────────────────────────────────────────────
 // Mapa sessionId -> { router -> processo vtysh ativo }
 const ptyProcesses = new Map();
@@ -1663,6 +1771,31 @@ wss.on('connection', (ws, req) => {
   // Analisa URL para roteamento: /ws/terminal/:sessionId/:router vs /ws
   const url = req.url || '';
   const termMatch = url.match(/^\/ws\/terminal\/([^/]+)\/([^/]+)/);
+  const captureMatch = url.match(/^\/ws\/capture\/([^/?]+)/);
+
+  // ── MODO CAPTURA DE PACOTES ────────────────────────────────────────
+  // Cliente manda {type:'start', router, iface, filter} / {type:'stop'}
+  if (captureMatch) {
+    const session = sessions.get(decodeURIComponent(captureMatch[1]));
+    if (!session || session.status !== 'running') {
+      ws.send(JSON.stringify({ type: 'error', message: 'Sessão não encontrada ou lab não está rodando' }));
+      ws.close();
+      return;
+    }
+    ws.on('message', (data) => {
+      let msg;
+      try { msg = JSON.parse(data.toString()); } catch { return; }
+      if (msg?.type === 'start') {
+        session.lastActivity = Date.now();
+        startCapture(ws, session, String(msg.router || '').toUpperCase(), String(msg.iface || 'any'), String(msg.filter || 'all'))
+          .catch((e) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: 'error', message: e.message })));
+      }
+      if (msg?.type === 'stop') stopCapture(session.id);
+    });
+    ws.on('close', () => stopCapture(session.id));
+    ws.on('error', () => stopCapture(session.id));
+    return;
+  }
 
   // ── MODO TERMINAL PTY ──────────────────────────────────────────────
   if (termMatch) {
@@ -1828,6 +1961,7 @@ wss.on('connection', (ws, req) => {
 // Limpa processos PTY ao destruir sessão
 function cleanupPtyProcesses(sessionId) {
   stopGraphServer(sessionId);  // para o containerlab graph também
+  stopCapture(sessionId);
   const ptys = ptyProcesses.get(sessionId);
   if (!ptys) return;
   for (const proc of Object.values(ptys)) {
