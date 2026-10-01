@@ -160,6 +160,12 @@ function ExplanationPanel({ session, pushToast }) {
 // ─── SessionDetail ─────────────────────────────────────────────────────────
 function SessionDetail({ session, onClose, pushToast }) {
   const [history, setHistory] = useState(null);
+  const [labTitle, setLabTitle] = useState("");
+
+  // Título vem da API (o catálogo estático LABS_META está desatualizado)
+  useEffect(() => {
+    apiFetch("GET", `/labs/${session.labId}`).then((l) => setLabTitle(l.title)).catch(() => {});
+  }, [session.labId]);
 
   useEffect(() => {
     if (!session) return;
@@ -179,7 +185,7 @@ function SessionDetail({ session, onClose, pushToast }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
           {[
             ["Status",        <StatusBadge key="s" status={session.status} />],
-            ["Lab",           `Lab ${session.labId} — ${LABS_META.find(l => l.id === session.labId)?.title || ""}`],
+            ["Lab",           `Lab ${session.labId} — ${labTitle || LABS_META.find(l => l.id === session.labId)?.title || ""}`],
             ["Comandos",      session.commandCount],
             ["Score",         session.score !== null ? `${session.score}%` : "—"],
             ["Inativo há",    `${Math.round(session.idleSince / 60000)} min`],
