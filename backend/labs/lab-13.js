@@ -150,19 +150,20 @@ const lab = {
       title: "LSDB e LSAs",
       points: [
         "Cada roteador gera uma **Router LSA (Type 1)** descrevendo seus enlaces: interfaces, redes e custo de cada uma.",
-        "Em segmentos com DR, o DR também gera uma **Network LSA (Type 2)** descrevendo quem está ligado naquele segmento.",
+        "Em segmentos broadcast (o padrão nas interfaces Ethernet), o **DR** do segmento gera também uma **Network LSA (Type 2)** listando quem está ligado ali. Neste lab são **2**: uma por enlace /30.",
         "As LSAs são **inundadas (flooding)** para toda a área. Resultado: **todos os roteadores da área têm o mesmo LSDB**.",
         "Cada LSA é identificada pelo **Link State ID** e pelo **Advertising Router** (o RID de quem a criou), e tem um número de sequência — a versão mais nova vence.",
       ],
-      code: "R2# show ip ospf database\n\n                Router Link States (Area 0.0.0.0)\nLink ID         ADV Router      Age  Seq#       CkSum  Link count\n1.1.1.1         1.1.1.1          ... ...        ...    ...\n2.2.2.2         2.2.2.2          ... ...        ...    ...\n3.3.3.3         3.3.3.3          ... ...        ...    ...",
-      note: "Saída resumida e ilustrativa — compare com o que aparece no seu lab.",
+      code: "R2# show ip ospf database\n\n                Router Link States (Area 0.0.0.0)\nLink ID         ADV Router      Age  Seq#       CkSum  Link count\n1.1.1.1         1.1.1.1          ... ...        ...    ...\n2.2.2.2         2.2.2.2          ... ...        ...    ...\n3.3.3.3         3.3.3.3          ... ...        ...    ...\n\n                Net Link States (Area 0.0.0.0)\nLink ID         ADV Router      Age  Seq#       CkSum\n10.0.12.x       (DR do enlace R1–R2) ...      ...\n10.0.23.x       (DR do enlace R2–R3) ...      ...",
+      note: "Saída resumida e ilustrativa. Na Net Link State, o Link ID é o IP da interface do DR no enlace e o ADV Router é o Router ID dele — confira no seu lab quem foi eleito.",
     },
     {
       title: "Custo e escolha do melhor caminho",
       points: [
         "Cada interface tem um **custo**. Por padrão: **custo = banda de referência ÷ banda da interface**.",
         "A banda de referência padrão é **100 Mbps**: uma interface de 10 Mbps tem custo 10; de 100 Mbps ou mais, custo 1 (o mínimo).",
-        "A **métrica** de uma rota é a **soma dos custos das interfaces de saída** ao longo do caminho até o destino.",
+        "**Neste lab**, cada interface entre roteadores tem **custo 10** (é o que o FRR aplica nesses enlaces virtuais). Confirme no `show ip ospf interface`.",
+        "A **métrica** de uma rota é a **soma dos custos das interfaces de saída** ao longo do caminho até o destino. Ex.: de R1 até a rede 10.0.23.0/30 = 10 (R1→R2) + 10 (R2→R3) = **20**.",
         "O SPF escolhe o caminho de **menor métrica**. Custo menor é sempre preferido.",
         "Para ver o custo aplicado a cada interface: `show ip ospf interface` → campo **Cost**.",
       ],
@@ -180,7 +181,7 @@ const lab = {
     },
     {
       title: "Lendo o show ip ospf neighbor",
-      code: "R2# show ip ospf neighbor\n\nNeighbor ID  Pri State      Up Time  Dead Time Address    Interface\n1.1.1.1        1 Full/DR    5m10s      34.2s 10.0.12.1  eth1:10.0.12.2\n3.3.3.3        1 Full/DR    5m09s      35.8s 10.0.23.2  eth2:10.0.23.1",
+      code: "R2# show ip ospf neighbor\n\nNeighbor ID  Pri State        Up Time  Dead Time Address    Interface\n1.1.1.1        1 Full/Backup  5m10s        34.2s 10.0.12.1  eth1:10.0.12.2\n3.3.3.3        1 Full/DR      5m09s        35.8s 10.0.23.2  eth2:10.0.23.1",
       table: {
         head: ["Coluna", "Significado"],
         rows: [
@@ -196,18 +197,18 @@ const lab = {
     },
     {
       title: "Lendo a tabela de rotas",
-      code: "R1# show ip route ospf\n\nO>* 3.3.3.3/32 [110/20] via 10.0.12.2, eth1, weight 1, 00:05:02",
+      code: "R1# show ip route ospf\n\nO>* 10.0.23.0/30 [110/20] via 10.0.12.2, eth1, weight 1, 00:05:02",
       table: {
         head: ["Parte", "Significado"],
         rows: [
           ["O", "Rota aprendida via OSPF"],
           [">", "Rota selecionada como a melhor para esse prefixo"],
           ["*", "Rota instalada na tabela de encaminhamento (FIB)"],
-          ["[110/20]", "Distância administrativa do OSPF (110) / métrica OSPF (soma dos custos)"],
+          ["[110/20]", "Distância administrativa do OSPF (110) / métrica OSPF: 10 (R1→R2) + 10 (R2→R3) = 20"],
           ["via 10.0.12.2, eth1", "Próximo salto e interface de saída"],
         ],
       },
-      note: "Exemplo ilustrativo: a métrica real depende do custo das interfaces no seu lab.",
+      note: "O tempo no fim da linha é há quanto a rota existe — vai variar no seu lab.",
     },
     {
       title: "Comandos que você vai usar",
@@ -251,12 +252,12 @@ const lab = {
     {
       id: "e3",
       prompt: "Como o OSPF chegou ao custo das interfaces de R2? Mostre onde você viu esse valor.",
-      lookFor: "Custo = banda de referência ÷ banda da interface. Aponta o campo Cost no show ip ospf interface. Sabe que menor custo é preferido e que a métrica é a soma dos custos.",
+      lookFor: "Custo = banda de referência ÷ banda da interface. Aponta o campo Cost (10) no show ip ospf interface. Sabe que menor custo é preferido e que a métrica é a soma dos custos (ex.: R1 até 10.0.23.0/30 = 20).",
     },
     {
       id: "e4",
       prompt: "O que aparece no `show ip ospf database`, e por que todos os roteadores da área têm o mesmo conteúdo?",
-      lookFor: "Router LSAs (Type 1), uma por roteador (e Network LSAs Type 2 do DR, se houver). As LSAs são inundadas para toda a área, então o LSDB é idêntico em todos — e cada um roda o SPF sobre ele.",
+      lookFor: "3 Router LSAs (Type 1), uma por roteador, e 2 Network LSAs (Type 2), uma por enlace /30, geradas pelo DR de cada enlace. As LSAs são inundadas para toda a área, então o LSDB é idêntico em todos — e cada um roda o SPF sobre ele.",
     },
     {
       id: "e5",
@@ -343,14 +344,14 @@ const lab = {
     {
       id: 1,
       title: "Verificar as adjacências da cadeia",
-      theory: "Antes de uma adjacência OSPF chegar a Full (totalmente sincronizada), os dois roteadores passam por uma sequência de estados: Down (nenhum contato) → Init (Hello recebido, mas ainda não bidirecional) → 2-Way (bidirecional — nesse ponto, numa rede broadcast com mais de 2 roteadores, ocorre a eleição de DR/BDR) → ExStart (negociando quem começa a troca) → Exchange (trocando descrições do banco de dados) → Loading (pedindo as LSAs que faltam) → Full (sincronizado). Só em Full a adjacência está pronta para uso.\n\nNesta topologia, R1—R2—R3 formam uma cadeia simples em área única (área 0). R2 é o único roteador com dois vizinhos diretos.",
+      theory: "Antes de uma adjacência OSPF chegar a Full (totalmente sincronizada), os dois roteadores passam por uma sequência de estados: Down (nenhum contato) → Init (Hello recebido, mas ainda não bidirecional) → 2-Way (bidirecional — nesse ponto, em redes do tipo broadcast, ocorre a eleição de DR/BDR; no FRR as interfaces Ethernet/veth são broadcast por padrão, então isso acontece mesmo num enlace com só dois roteadores) → ExStart (negociando quem começa a troca) → Exchange (trocando descrições do banco de dados) → Loading (pedindo as LSAs que faltam) → Full (sincronizado). Só em Full a adjacência está pronta para uso.\n\nNesta topologia, R1—R2—R3 formam uma cadeia simples em área única (área 0). R2 é o único roteador com dois vizinhos diretos. Na coluna State você verá algo como 'Full/DR' ou 'Full/Backup': a primeira parte é o estado da adjacência, a segunda é o papel do vizinho naquele segmento.",
       description: "Rode 'show ip ospf neighbor' nos três roteadores e confirme que todas as adjacências estão em Full.",
       commands: [
         { cmd: "show ip ospf neighbor", router: "R1", desc: "Vizinhos de R1" },
         { cmd: "show ip ospf neighbor", router: "R2", desc: "Vizinhos de R2" },
         { cmd: "show ip ospf neighbor", router: "R3", desc: "Vizinhos de R3" },
       ],
-      expected: "R2 mostra dois vizinhos em Full (1.1.1.1 e 3.3.3.3). R1 e R3 mostram um vizinho cada, também Full.",
+      expected: "R2 mostra dois vizinhos em Full (1.1.1.1 e 3.3.3.3), cada um com seu papel no segmento (DR ou Backup). R1 e R3 mostram um vizinho cada, também Full.",
       predict: {
         id: "predict_step1",
         prompt: "Antes de rodar o comando, quantos vizinhos Full você espera ver em R2?",
@@ -359,14 +360,14 @@ const lab = {
     {
       id: 2,
       title: "Entender o custo e o banco de dados",
-      theory: "O custo OSPF de uma interface, por padrão, é calculado como (banda de referência) ÷ (banda da interface) — quanto maior a banda, menor o custo, e menor custo é sempre preferido na escolha de caminho. O comando 'show ip ospf interface' mostra o custo aplicado a cada interface. Já 'show ip ospf database' mostra o banco de LSAs conhecido — numa área única, sem ABRs, você só verá LSAs Type-1 (Router LSA), uma por roteador, cada uma descrevendo os enlaces daquele roteador.",
+      theory: "O custo OSPF de uma interface, por padrão, é calculado como (banda de referência) ÷ (banda da interface) — quanto maior a banda, menor o custo, e menor custo é sempre preferido na escolha de caminho. O comando 'show ip ospf interface' mostra o custo aplicado a cada interface — nos enlaces deste lab, 10. Já 'show ip ospf database' mostra o banco de LSAs conhecido. Numa área única você verá dois tipos: LSAs Type-1 (Router LSA), uma por roteador, cada uma descrevendo os enlaces daquele roteador; e LSAs Type-2 (Network LSA), uma por segmento broadcast, gerada pelo DR daquele segmento e listando os roteadores ligados nele.",
       description: "Rode 'show ip ospf interface' e 'show ip ospf database' em R2 e observe o custo das duas interfaces e as entradas do banco de dados.",
       commands: [
         { cmd: "show ip ospf interface", router: "R2", desc: "Custo das interfaces de R2" },
         { cmd: "show ip ospf database", router: "R2", desc: "Banco de LSAs conhecido por R2" },
         { cmd: "show ip route ospf", router: "R1", desc: "Rotas aprendidas por OSPF em R1" },
       ],
-      expected: "R2 mostra o custo de cada interface. O banco de dados mostra 3 Router LSAs (uma por roteador da área). R1 já tem rota para a rede de R3, aprendida via R2.",
+      expected: "R2 mostra custo 10 em cada interface OSPF. O banco de dados mostra 3 Router LSAs (Type-1, uma por roteador) e 2 Network LSAs (Type-2, uma por enlace /30, gerada pelo DR de cada enlace). R1 já tem rota para a rede entre R2 e R3 (10.0.23.0/30), aprendida via R2, com métrica 20 (10 + 10).",
     },
     {
       id: 3,
