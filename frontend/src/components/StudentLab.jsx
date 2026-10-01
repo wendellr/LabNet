@@ -629,6 +629,10 @@ function PcapTab({ onRunCmd }) {
 // ─── StudentLab (main) ────────────────────────────────────────────────────
 export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
   const [activeTab, setActiveTab] = useState("roteiro");
+  // Wireshark fica montado depois da primeira visita (escondido por CSS),
+  // senão trocar de aba fecha o WebSocket e a captura para no meio
+  const [wiresharkMounted, setWiresharkMounted] = useState(false);
+  useEffect(() => { if (activeTab === "wireshark") setWiresharkMounted(true); }, [activeTab]);
   const [provisionStatus, setProvisionStatus] = useState("provisioning");
   const [provisionMsg, setProvisionMsg]       = useState("Iniciando containers...");
   const [progress, setProgress]               = useState({});
@@ -821,8 +825,18 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
         {activeTab === "challenge" && (
           <ChallengeTab labId={labId} sessionId={sessionId} onSubmitDone={setScore} predictions={predictions} />
         )}
-        {activeTab === "wireshark" && (
-          <WiresharkTab labId={labId} sessionId={sessionId} session={session} />
+        {wiresharkMounted && (
+          <div style={{
+            position: activeTab === "wireshark" ? "relative" : "absolute",
+            inset: 0,
+            display: "flex",
+            flex: activeTab === "wireshark" ? 1 : undefined,
+            visibility: activeTab === "wireshark" ? "visible" : "hidden",
+            pointerEvents: activeTab === "wireshark" ? "auto" : "none",
+            zIndex: activeTab === "wireshark" ? 1 : -1,
+          }}>
+            <WiresharkTab labId={labId} sessionId={sessionId} session={session} />
+          </div>
         )}
 
         {/* Terminal SEMPRE montado — visibilidade via CSS para preservar WebSockets PTY */}
