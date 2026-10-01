@@ -95,13 +95,29 @@ function createSession(studentName, labId, sessionId = null, matricula = '') {
     labDir: null,
     error: null,
     materializedLab: null,     // lab com variables{} resolvidas para esta sessão (materializeLab)
+    teacherCall: null,         // { status: 'waiting'|'done', ts } — aluno chamou o professor para explicar o lab
   };
+}
+
+// Todo evento também vai para activity.jsonl (append-only, fora do git, ao
+// lado do grades.jsonl) — o eventLog em memória some num restart e as
+// sessões somem no cleanup, então sem isso não sobra registro da atividade
+// do aluno além da nota. Escritas encadeadas numa única promise para manter
+// a ordem das linhas no arquivo.
+let activityWriteChain = Promise.resolve();
+function persistEvent(event) {
+  const file = path.join(CONFIG.LAB_BASE_DIR, 'activity.jsonl');
+  activityWriteChain = activityWriteChain
+    .then(() => fs.mkdir(CONFIG.LAB_BASE_DIR, { recursive: true }))
+    .then(() => fs.appendFile(file, JSON.stringify(event) + '\n'))
+    .catch((e) => console.error('[activity] Falha ao gravar evento:', e.message));
 }
 
 function logEvent(type, data) {
   const event = { ts: Date.now(), type, ...data };
   eventLog.push(event);
   if (eventLog.length > 2000) eventLog = eventLog.slice(-1500);
+  persistEvent(event);
   broadcast({ type: 'event', event }, 'teacher');
 }
 
@@ -160,6 +176,7 @@ function getDashboardSnapshot() {
       progress: s.progress,
       score: s.score,
       error: s.error,
+      teacherCall: s.teacherCall,
     });
   }
   return {
@@ -745,7 +762,7 @@ app.post('/api/session', async (req, res) => {
 
   const session = createSession(studentName, labId, null, matricula);
   sessions.set(session.id, session);
-  logEvent('session_created', { sessionId: session.id, student: studentName, labId });
+  logEvent('session_created', { sessionId: session.id, student: studentName, matricula: session.matricula, labId });
   broadcastDashboard();
 
   // Provisiona em background
@@ -792,6 +809,7 @@ app.get('/api/session/:id', (req, res) => {
     commandCount: s.commandHistory.length,
     progress: s.progress, score: s.score,
     lastActivity: s.lastActivity, error: s.error,
+    teacherCall: s.teacherCall,
   });
 });
 
@@ -1306,6 +1324,83 @@ app.get('/api/admin/events', requireTeacher, (req, res) => {
   res.json({ events: eventLog.slice(-limit) });
 });
 
+// ─── Explicação ao professor ─────────────────────────────────────────────────
+// Ao final do lab o aluno pode chamar o professor (quando ele pedir em sala)
+// e explicar, guiado pelas perguntas de `lab.explain`, o que fez e por quê.
+// O professor marca cada pergunta e a avaliação fica em explanations.jsonl —
+// registro à parte, não altera a nota automática.
+const EXPLANATIONS_LOG_PATH = path.join(CONFIG.LAB_BASE_DIR, 'explanations.jsonl');
+
+app.post('/api/session/:id/call-teacher', (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  const cancel = req.body?.cancel === true;
+  session.teacherCall = cancel ? null : { status: 'waiting', ts: Date.now() };
+  session.lastActivity = Date.now();
+  logEvent(cancel ? 'teacher_call_cancel' : 'teacher_call', {
+    sessionId: session.id, student: session.studentName, labId: session.labId,
+  });
+  if (!cancel) {
+    broadcast({ type: 'teacher_call', sessionId: session.id, student: session.studentName, labId: session.labId }, 'teacher');
+  }
+  broadcastDashboard();
+  res.json({ teacherCall: session.teacherCall });
+});
+
+// Perguntas completas (com `lookFor`) para o professor conduzir a explicação
+app.get('/api/admin/session/:id/explain', requireTeacher, (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  const lab = session.materializedLab || LABS[session.labId];
+  res.json({ explain: lab?.explain || [], teacherCall: session.teacherCall });
+});
+
+app.post('/api/admin/session/:id/explanation', requireTeacher, async (req, res) => {
+  const session = sessions.get(req.params.id);
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  const { items = {}, note = '' } = req.body || {};
+  const lab = session.materializedLab || LABS[session.labId];
+  const questions = lab?.explain || [];
+  const record = {
+    ts: Date.now(),
+    sessionId: session.id,
+    studentName: session.studentName,
+    matricula: session.matricula || '',
+    labId: session.labId,
+    labTitle: lab?.title || `Lab ${session.labId}`,
+    items: questions.map(q => ({ id: q.id, prompt: q.prompt, mark: items[q.id] || null })),
+    total: questions.length,
+    note: String(note).slice(0, 2000),
+  };
+  record.ok = record.items.filter(i => i.mark === 'ok').length;
+  record.partial = record.items.filter(i => i.mark === 'partial').length;
+  try {
+    await fs.mkdir(CONFIG.LAB_BASE_DIR, { recursive: true });
+    await fs.appendFile(EXPLANATIONS_LOG_PATH, JSON.stringify(record) + '\n');
+  } catch (e) {
+    return res.status(500).json({ error: 'Falha ao gravar: ' + e.message });
+  }
+  session.teacherCall = { status: 'done', ts: Date.now(), ok: record.ok, total: record.total };
+  logEvent('explanation_recorded', {
+    sessionId: session.id, student: session.studentName, labId: session.labId,
+    label: `${record.ok}/${record.total} ok`,
+  });
+  broadcast({ type: 'explanation_done' }, 'all', session.id);
+  broadcastDashboard();
+  res.json({ ok: true, record });
+});
+
+app.get('/api/admin/explanations', requireTeacher, async (req, res) => {
+  try {
+    const raw = await fs.readFile(EXPLANATIONS_LOG_PATH, 'utf8');
+    const records = raw.split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    res.json({ records });
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.json({ records: [] });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Health check
 // Proxy para containerlab graph — evita expor porta 310x diretamente
 app.get('/api/session/:id/graph', (req, res) => {
@@ -1370,6 +1465,7 @@ app.get('/api/labs', (req, res) => {
     duration: l.duration,
     routers: l.routers,
     routerCount: l.routers?.length || 0,
+    hasTheory: (l.theorySlides?.length || 0) > 0,
     resourceProfile: l.resourceProfile || resourceProfileForLab(l),
   }));
   res.json(meta);
@@ -1379,8 +1475,15 @@ app.get('/api/labs', (req, res) => {
 // answerKey — nenhum dos dois é necessário no frontend, e answerKey nunca
 // deveria vazar respostas corretas para quem só está consultando a API).
 function publicLabView(lab) {
-  const { frr_configs, variables, answerKey, ...rest } = lab;
-  return { ...rest, protocol: lab.protocol || 'bgp', topologyDetails: summarizeTopology(lab) };
+  const { frr_configs, variables, answerKey, explain, ...rest } = lab;
+  return {
+    ...rest,
+    protocol: lab.protocol || 'bgp',
+    topologyDetails: summarizeTopology(lab),
+    // Perguntas da explicação ao professor vão para o aluno sem o `lookFor`
+    // (o que o professor espera ouvir — seria a resposta pronta)
+    explain: (explain || []).map(({ lookFor, ...q }) => q),
+  };
 }
 
 // Prévia genérica de um lab, sem sessão — usada tanto pela consulta direta
@@ -1439,6 +1542,115 @@ app.post('/api/config/email', requireTeacher, (req, res) => {
   res.json({ ok: true, configured: !!(runtimeConfig.resendKey && runtimeConfig.teacherEmail) });
 });
 
+// ─── Captura de comandos do terminal interativo ───────────────────────────
+// O terminal do aluno é um vtysh real via PTY: as teclas vão direto para o
+// container, sem passar por /exec. Sem esta captura, nada do que o aluno
+// digita entra em commandHistory, no log de eventos ou no autoGrade.
+//
+// O comando é reconstruído a partir do ECO do terminal (a linha como o vtysh
+// a desenhou), porque o eco já reflete Tab-completion e histórico por setas,
+// que um buffer de teclas não enxerga. O buffer de teclas só é usado quando
+// o texto chega junto com o Enter num único pedaço (colar ou comando
+// injetado pelo roteiro) — aí o eco ainda não voltou.
+const PROMPT_RE = /^[^\s#>]+[#>]\s?/;
+
+function stripPrompt(line) {
+  const m = line.match(PROMPT_RE);
+  return m ? line.slice(m[0].length).trim() : null;
+}
+
+function createCommandCapture(session, router) {
+  let line = '';        // linha corrente da tela (eco), com cursor
+  let cursor = 0;
+  let escState = null;  // null | 'esc' | string de parâmetros CSI
+  let typed = '';       // buffer de teclas desde o último Enter
+  let pending = null;   // { command, ts, lines: [] } aguardando o output
+  let idleTimer = null;
+
+  const finalize = () => {
+    clearTimeout(idleTimer);
+    if (!pending) return;
+    const { command, ts, lines } = pending;
+    pending = null;
+    // A primeira linha é o próprio eco "R1# comando" — não faz parte do output
+    const body = lines.length && PROMPT_RE.test(lines[0]) ? lines.slice(1) : lines;
+    const output = body.join('\n').trim().slice(0, 4096);
+    session.commandHistory.push({ ts, router, command, output, source: 'terminal' });
+    if (session.commandHistory.length > 500) session.commandHistory.splice(0, 100);
+    session.lastActivity = Date.now();
+    logEvent('command_exec', {
+      sessionId: session.id, student: session.studentName, router, command,
+      source: 'terminal', output: output.slice(0, 2000),
+    });
+    broadcastDashboard();
+    autoEvaluateProgress(session, router, command, output);
+  };
+
+  const onScreenChar = (ch) => {
+    if (escState === 'esc') { escState = ch === '[' ? '' : null; return; }
+    if (escState !== null) {
+      if (/[0-9;?]/.test(ch)) { escState += ch; return; }
+      const n = parseInt(escState, 10) || 1;
+      if (ch === 'K') line = line.slice(0, cursor);
+      else if (ch === 'C') cursor += n;
+      else if (ch === 'D') cursor = Math.max(0, cursor - n);
+      escState = null;
+      return;
+    }
+    if (ch === '\x1b') { escState = 'esc'; return; }
+    if (ch === '\r') { cursor = 0; return; }
+    if (ch === '\b') { cursor = Math.max(0, cursor - 1); return; }
+    if (ch === '\n') {
+      if (pending) pending.lines.push(line);
+      line = ''; cursor = 0;
+      return;
+    }
+    if (ch < ' ' || ch === '\x7f') return;
+    if (cursor > line.length) line = line.padEnd(cursor, ' ');
+    line = line.slice(0, cursor) + ch + line.slice(cursor + 1);
+    cursor++;
+  };
+
+  return {
+    onOutput(chunk) {
+      for (const ch of chunk.toString('utf8')) onScreenChar(ch);
+      if (pending) {
+        // Output termina quando o prompt volta, ou após 2s sem novidade
+        clearTimeout(idleTimer);
+        if (PROMPT_RE.test(line) && pending.lines.length > 0) finalize();
+        else idleTimer = setTimeout(finalize, 2000);
+      }
+    },
+
+    onInput(data) {
+      // Setas/Home/End chegam como sequências de escape — não são texto digitado
+      const text = data.toString('utf8').replace(/\x1b(\[[0-9;]*[A-Za-z~]|O[A-Za-z])/g, '');
+      let typedInChunk = false;
+      for (const ch of text) {
+        if (ch === '\r' || ch === '\n') {
+          const fromEcho = stripPrompt(line);
+          const command = (typedInChunk || !fromEcho ? typed : fromEcho).trim();
+          typed = '';
+          typedInChunk = false;
+          if (!command) continue;
+          finalize();
+          pending = { command, ts: Date.now(), lines: [] };
+          idleTimer = setTimeout(finalize, 2000);
+        } else if (ch === '\x7f' || ch === '\b') {
+          typed = typed.slice(0, -1);
+        } else if (ch === '\x15' || ch === '\x03') {
+          typed = '';
+        } else if (ch >= ' ') {
+          typed += ch;
+          typedInChunk = true;
+        }
+      }
+    },
+
+    flush: finalize,
+  };
+}
+
 // ─── WebSocket ─────────────────────────────────────────────────────────────
 // Mapa sessionId -> { router -> processo vtysh ativo }
 const ptyProcesses = new Map();
@@ -1487,8 +1699,11 @@ wss.on('connection', (ws, req) => {
     }
     sessionPtys[router] = proc;
 
+    const capture = createCommandCapture(session, router);
+
     // stdout/stderr do container → WebSocket (binário passado diretamente)
     proc.stdout.on('data', (chunk) => {
+      capture.onOutput(chunk);
       if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
     });
     proc.stderr.on('data', (chunk) => {
@@ -1497,6 +1712,7 @@ wss.on('connection', (ws, req) => {
 
     proc.on('close', (code) => {
       clearInterval(keepaliveTimer);
+      capture.flush();
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(`\r\n\x1b[33m[conexão encerrada — código ${code}]\x1b[0m\r\n`);
         ws.close();
@@ -1524,11 +1740,16 @@ wss.on('connection', (ws, req) => {
 
     // WebSocket → stdin do container
     ws.on('message', (data) => {
-      // Pode vir como string (texto) ou Buffer (escape sequences, resize)
+      // Mensagem de controle do frontend é sempre um objeto JSON com `type`.
+      // Qualquer outra coisa é input do terminal — inclusive teclas que por
+      // acaso são JSON válido, como um dígito isolado ("1" parseia para 1).
+      let msg = null;
       try {
-        // Tenta parsear como JSON (mensagem de controle do frontend)
-        const msg = JSON.parse(data.toString());
+        const parsed = JSON.parse(data.toString());
+        if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') msg = parsed;
+      } catch {}
 
+      if (msg) {
         if (msg.type === 'resize' && proc.stdin.writable) {
           // xterm.js envia dimensões para redimensionar PTY
           // docker exec -it não suporta resize diretamente via stdin,
@@ -1536,18 +1757,17 @@ wss.on('connection', (ws, req) => {
           execAsync(
             `docker exec ${containerName} sh -c 'kill -WINCH $(ps -o pid= -p 1 2>/dev/null || echo 1)' 2>/dev/null || true`
           ).catch(() => {});
-          return;
         }
-
         if (msg.type === 'ping') {
           ws.send(JSON.stringify({ type: 'pong' }));
-          return;
         }
-      } catch {
-        // Não é JSON — é input do terminal: passa direto pro stdin
-        if (proc.stdin.writable) {
-          proc.stdin.write(data);
-        }
+        return;
+      }
+
+      if (proc.stdin.writable) {
+        capture.onInput(data);
+        proc.stdin.write(data);
+        session.lastActivity = Date.now();
       }
     });
 

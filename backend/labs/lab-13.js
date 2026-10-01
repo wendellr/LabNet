@@ -31,6 +31,245 @@ const lab = {
     newNet: { pool: ["172.30.50", "172.30.60", "172.30.70", "172.30.80"] },
   },
 
+  // Teoria em slides — aba "📖 Teoria" do aluno e link público na tela
+  // inicial (?teoria=13). Inline: `código` e **negrito**.
+  theorySlides: [
+    {
+      title: "OSPF — Fundamentos",
+      subtitle: "Tudo o que você precisa saber para fazer o Lab 13",
+      points: [
+        "O que é um protocolo **link-state** e por que o OSPF é um deles",
+        "Como dois roteadores viram vizinhos: **Hello** e os **estados da adjacência**",
+        "O **banco de dados de estado de enlace (LSDB)** e as **LSAs**",
+        "Como o **custo** é calculado e como o melhor caminho é escolhido",
+        "Como colocar uma **rede nova** dentro do OSPF",
+        "Os comandos `show` que você vai usar — e como ler cada saída",
+      ],
+    },
+    {
+      title: "Por que roteamento dinâmico?",
+      points: [
+        "Com **rotas estáticas**, cada rede nova exige configurar manualmente **todos** os roteadores — e nada se adapta sozinho quando um enlace cai.",
+        "Com um **protocolo de roteamento dinâmico**, os roteadores trocam informações entre si e montam a tabela de rotas automaticamente.",
+        "**IGP** (Interior Gateway Protocol): roteamento **dentro** de uma organização — OSPF, IS-IS, RIP.",
+        "**EGP**: roteamento **entre** organizações (sistemas autônomos) — o BGP, que você verá em outra trilha.",
+        "O **OSPF** (Open Shortest Path First, RFC 2328) é o IGP aberto mais usado em redes corporativas e de provedores.",
+      ],
+    },
+    {
+      title: "Link-state: cada roteador tem o mapa inteiro",
+      points: [
+        "**Distance-vector** (ex.: RIP): o roteador só sabe o que o vizinho conta — \"a rede X está a 3 saltos por aqui\". É como seguir placas de estrada.",
+        "**Link-state** (OSPF): cada roteador descreve **os próprios enlaces** e essa descrição é distribuída para **todos** da área. Todos montam o **mesmo mapa**.",
+        "Com o mapa completo, cada roteador roda sozinho o algoritmo **SPF (Dijkstra)** e calcula o caminho de menor custo até cada destino.",
+        "Consequência: ao configurar algo em **um** roteador, a mudança se propaga e **todos** recalculam — sem tocar nos outros.",
+      ],
+      note: "Guarde esta ideia — ela é a resposta da última parte do lab.",
+    },
+    {
+      title: "A topologia do Lab 13",
+      diagram: [
+        "   ┌────┐   .1  10.0.12.0/30  .2  ┌────┐   .1  10.0.23.0/30  .2  ┌────┐",
+        "   │ R1 ├─eth1───────────────eth1─┤ R2 ├─eth2───────────────eth1─┤ R3 │",
+        "   └────┘                         └────┘                         └────┘",
+        "RID 1.1.1.1                    RID 2.2.2.2                    RID 3.3.3.3 ",
+        "",
+        "   ════════════════════════ ÁREA 0 (backbone) ═════════════════════════",
+      ].join("\n"),
+      points: [
+        "Três roteadores **em cadeia**: R1 e R3 não se falam diretamente — tudo passa por **R2**.",
+        "Todos estão na **área 0**, a área de backbone. Com uma única área, todos compartilham o mesmo banco de dados.",
+        "O OSPF já vem configurado e funcionando: neste lab você **observa** o protocolo e depois **adiciona uma rede nova** em R3.",
+      ],
+    },
+    {
+      title: "Router ID (RID)",
+      points: [
+        "Cada roteador OSPF é identificado por um **Router ID** de 32 bits, escrito como um endereço IPv4.",
+        "Ordem de escolha: (1) `ospf router-id` configurado → (2) maior IP de loopback → (3) maior IP de interface ativa.",
+        "No lab o RID está configurado explicitamente: R1 = `1.1.1.1`, R2 = `2.2.2.2`, R3 = `3.3.3.3`.",
+        "É o RID que aparece na coluna **Neighbor ID** do `show ip ospf neighbor` — **não** o IP da interface do vizinho.",
+      ],
+      code: "router ospf\n ospf router-id 2.2.2.2",
+    },
+    {
+      title: "Os pacotes do OSPF",
+      table: {
+        head: ["Tipo", "Pacote", "Para que serve"],
+        rows: [
+          ["1", "Hello", "Descobre vizinhos e mantém a adjacência viva"],
+          ["2", "DBD (Database Description)", "Resumo do banco de dados — \"eu conheço estas LSAs\""],
+          ["3", "LSR (Link-State Request)", "\"Me manda esta LSA que eu não tenho\""],
+          ["4", "LSU (Link-State Update)", "Carrega as LSAs de fato"],
+          ["5", "LSAck", "Confirma o recebimento de LSAs"],
+        ],
+      },
+      points: [
+        "O OSPF roda direto sobre IP (**protocolo 89**), sem TCP/UDP.",
+        "Hellos vão para o multicast `224.0.0.5` (todos os roteadores OSPF), a cada **10 s** por padrão. Sem Hello por **40 s** (dead interval), o vizinho é considerado morto.",
+      ],
+    },
+    {
+      title: "Hello: quando dois roteadores viram vizinhos",
+      points: [
+        "Para formar adjacência, os dois lados precisam **concordar** em:",
+        "• **Área** — mesma área na interface",
+        "• **Sub-rede e máscara** — mesmo segmento IP (aqui, os /30)",
+        "• **Hello / Dead interval** — mesmos timers (10 s / 40 s)",
+        "• **Autenticação** e **tipo de área** (ex.: stub) — iguais",
+        "• **MTU** — diferenças travam a troca de banco de dados",
+        "Se qualquer item diverge, a adjacência **não sobe**. Neste lab tudo está correto; o Lab 10 explora o que acontece quando não está.",
+      ],
+    },
+    {
+      title: "Os estados de uma adjacência",
+      flow: ["Down", "Init", "2-Way", "ExStart", "Exchange", "Loading", "Full"],
+      table: {
+        head: ["Estado", "O que está acontecendo"],
+        rows: [
+          ["Down", "Nenhum Hello recebido do vizinho"],
+          ["Init", "Recebi Hello dele, mas ele ainda não me listou — comunicação de mão única"],
+          ["2-Way", "Cada um se vê no Hello do outro — bidirecional. Aqui ocorre a eleição de DR/BDR"],
+          ["ExStart", "Negociam quem conduz a troca (mestre/escravo) e o número de sequência"],
+          ["Exchange", "Trocam DBDs: o resumo de cada banco de dados"],
+          ["Loading", "Pedem (LSR) e recebem (LSU) as LSAs que estão faltando"],
+          ["Full", "Bancos de dados **sincronizados** — adjacência pronta para uso"],
+        ],
+      },
+    },
+    {
+      title: "Full/DR, Full/Backup… o que é isso?",
+      points: [
+        "Nas interfaces Ethernet o OSPF usa, por padrão, o tipo de rede **broadcast**. Nele, cada segmento elege um **DR** (Designated Router) e um **BDR** (Backup).",
+        "O DR centraliza a troca de LSAs no segmento, evitando que todos formem adjacência com todos.",
+        "Por isso o estado aparece como `Full/DR` ou `Full/Backup`: a primeira parte é o **estado da adjacência**; a segunda, o **papel do vizinho** naquele segmento.",
+        "O que importa neste lab é a parte **Full**. Eleição de DR/BDR em detalhe é assunto do **Lab 14**.",
+      ],
+    },
+    {
+      title: "LSDB e LSAs",
+      points: [
+        "Cada roteador gera uma **Router LSA (Type 1)** descrevendo seus enlaces: interfaces, redes e custo de cada uma.",
+        "Em segmentos com DR, o DR também gera uma **Network LSA (Type 2)** descrevendo quem está ligado naquele segmento.",
+        "As LSAs são **inundadas (flooding)** para toda a área. Resultado: **todos os roteadores da área têm o mesmo LSDB**.",
+        "Cada LSA é identificada pelo **Link State ID** e pelo **Advertising Router** (o RID de quem a criou), e tem um número de sequência — a versão mais nova vence.",
+      ],
+      code: "R2# show ip ospf database\n\n                Router Link States (Area 0.0.0.0)\nLink ID         ADV Router      Age  Seq#       CkSum  Link count\n1.1.1.1         1.1.1.1          ... ...        ...    ...\n2.2.2.2         2.2.2.2          ... ...        ...    ...\n3.3.3.3         3.3.3.3          ... ...        ...    ...",
+      note: "Saída resumida e ilustrativa — compare com o que aparece no seu lab.",
+    },
+    {
+      title: "Custo e escolha do melhor caminho",
+      points: [
+        "Cada interface tem um **custo**. Por padrão: **custo = banda de referência ÷ banda da interface**.",
+        "A banda de referência padrão é **100 Mbps**: uma interface de 10 Mbps tem custo 10; de 100 Mbps ou mais, custo 1 (o mínimo).",
+        "A **métrica** de uma rota é a **soma dos custos das interfaces de saída** ao longo do caminho até o destino.",
+        "O SPF escolhe o caminho de **menor métrica**. Custo menor é sempre preferido.",
+        "Para ver o custo aplicado a cada interface: `show ip ospf interface` → campo **Cost**.",
+      ],
+      note: "Em redes reais com links de 1 e 10 Gbps, todos ficariam com custo 1 — por isso se ajusta `auto-cost reference-bandwidth`. Isso será explorado em labs posteriores.",
+    },
+    {
+      title: "Colocando uma rede no OSPF: o comando network",
+      code: "router ospf\n network 10.0.23.0/30 area 0\n network 3.3.3.3/32 area 0",
+      points: [
+        "`network <prefixo> area <área>` **não** anuncia o prefixo literalmente: ele **ativa o OSPF em toda interface cujo IP cai dentro do prefixo**.",
+        "Com o OSPF ativo na interface, duas coisas acontecem: (1) ela passa a enviar Hellos e formar vizinhos; (2) a rede dela entra na Router LSA do roteador.",
+        "Para uma **rede nova** entrar no domínio, basta configurar isso em **um** roteador que tenha uma interface nela. A LSA atualizada se espalha pela área e todos aprendem a rota.",
+        "**Detalhe do FRR:** endereços de **loopback** são sempre anunciados como rota de **host /32**, mesmo que o `network` cubra um /24. Procure o /32 na tabela de rotas.",
+      ],
+    },
+    {
+      title: "Lendo o show ip ospf neighbor",
+      code: "R2# show ip ospf neighbor\n\nNeighbor ID  Pri State      Up Time  Dead Time Address    Interface\n1.1.1.1        1 Full/DR    5m10s      34.2s 10.0.12.1  eth1:10.0.12.2\n3.3.3.3        1 Full/DR    5m09s      35.8s 10.0.23.2  eth2:10.0.23.1",
+      table: {
+        head: ["Coluna", "Significado"],
+        rows: [
+          ["Neighbor ID", "Router ID do vizinho"],
+          ["Pri", "Prioridade na eleição de DR (padrão 1)"],
+          ["State", "Estado da adjacência / papel do vizinho no segmento"],
+          ["Dead Time", "Tempo até declarar o vizinho morto se não chegar Hello"],
+          ["Address", "IP da interface do vizinho no enlace"],
+          ["Interface", "Interface local por onde o vizinho foi encontrado"],
+        ],
+      },
+      note: "Saída ilustrativa (colunas resumidas) — os papéis DR/Backup podem variar no seu lab.",
+    },
+    {
+      title: "Lendo a tabela de rotas",
+      code: "R1# show ip route ospf\n\nO>* 3.3.3.3/32 [110/20] via 10.0.12.2, eth1, weight 1, 00:05:02",
+      table: {
+        head: ["Parte", "Significado"],
+        rows: [
+          ["O", "Rota aprendida via OSPF"],
+          [">", "Rota selecionada como a melhor para esse prefixo"],
+          ["*", "Rota instalada na tabela de encaminhamento (FIB)"],
+          ["[110/20]", "Distância administrativa do OSPF (110) / métrica OSPF (soma dos custos)"],
+          ["via 10.0.12.2, eth1", "Próximo salto e interface de saída"],
+        ],
+      },
+      note: "Exemplo ilustrativo: a métrica real depende do custo das interfaces no seu lab.",
+    },
+    {
+      title: "Comandos que você vai usar",
+      table: {
+        head: ["Comando", "Responde à pergunta"],
+        rows: [
+          ["`show ip ospf neighbor`", "Com quem eu formei adjacência, e em que estado?"],
+          ["`show ip ospf interface`", "Em quais interfaces o OSPF está ativo, com que custo e timers?"],
+          ["`show ip ospf database`", "Que LSAs eu conheço — como é o mapa da área?"],
+          ["`show ip route ospf`", "Que rotas o OSPF instalou, por onde e com que métrica?"],
+          ["`show running-config`", "Como o roteador está configurado agora?"],
+        ],
+      },
+      points: [
+        "Para configurar: `configure terminal` → `router ospf` ou `interface lo` → … → `end`.",
+      ],
+    },
+    {
+      title: "Ao final: explique ao professor",
+      points: [
+        "Seu professor pode pedir que você **explique o que fez e por quê**. Use a aba **🙋 Explicar** para chamá-lo e seguir o roteiro de perguntas.",
+        "Você deve conseguir: mostrar e interpretar os vizinhos de R2; explicar o estado **Full**; dizer de onde vem o **custo**; descrever o **LSDB**; mostrar a configuração da rede nova e explicar por que **R1 aprendeu essa rede sem nenhuma configuração nele**.",
+        "Dica: não decore — rode os comandos e **aponte na saída** onde está cada coisa.",
+      ],
+    },
+  ],
+
+  // Explicação guiada ao professor (aba "🙋 Explicar"). `lookFor` é o que o
+  // professor espera ouvir — só aparece no painel do professor.
+  explain: [
+    {
+      id: "e1",
+      prompt: "Mostre o `show ip ospf neighbor` em R2. Quantos vizinhos ele tem, em que estado estão, e por que só R2 tem dois?",
+      lookFor: "Dois vizinhos, 1.1.1.1 e 3.3.3.3, ambos em Full. R2 está no meio da cadeia, ligado diretamente a R1 e a R3. Sabe que o Neighbor ID é o Router ID, não o IP da interface.",
+    },
+    {
+      id: "e2",
+      prompt: "O que significa o estado Full? Cite pelo menos dois estados anteriores e o que acontece em cada um.",
+      lookFor: "Full = bancos de dados (LSDB) sincronizados. Ex.: Init = Hello recebido, mão única; 2-Way = bidirecional / eleição de DR; ExStart/Exchange = troca de DBD; Loading = pede as LSAs que faltam.",
+    },
+    {
+      id: "e3",
+      prompt: "Como o OSPF chegou ao custo das interfaces de R2? Mostre onde você viu esse valor.",
+      lookFor: "Custo = banda de referência ÷ banda da interface. Aponta o campo Cost no show ip ospf interface. Sabe que menor custo é preferido e que a métrica é a soma dos custos.",
+    },
+    {
+      id: "e4",
+      prompt: "O que aparece no `show ip ospf database`, e por que todos os roteadores da área têm o mesmo conteúdo?",
+      lookFor: "Router LSAs (Type 1), uma por roteador (e Network LSAs Type 2 do DR, se houver). As LSAs são inundadas para toda a área, então o LSDB é idêntico em todos — e cada um roda o SPF sobre ele.",
+    },
+    {
+      id: "e5",
+      prompt: "Mostre a configuração que você fez em R3 para a rede {{newNet}}.0/24. O que exatamente o comando `network ... area 0` faz?",
+      lookFor: "ip address {{newNet}}.1/32 em interface lo; network {{newNet}}.0/24 area 0 dentro de router ospf. O network ativa o OSPF nas interfaces cujo IP cai no prefixo — não anuncia o prefixo literalmente.",
+    },
+    {
+      id: "e6",
+      prompt: "Por que R1 aprendeu a rede nova sem nenhuma configuração nele? Mostre a rota em R1 e explique cada parte da linha.",
+      lookFor: "R3 atualizou sua Router LSA, que foi inundada via R2 até R1; R1 rodou o SPF. Linha O>* {{newNet}}.1/32 [110/métrica] via 10.0.12.2, eth1: O = OSPF, > = melhor, * = instalada, 110 = distância administrativa, métrica = soma dos custos. /32 porque é loopback.",
+    },
+  ],
+
   autoGrade: [
     { id: "checked_neighbors", label: "Verificou vizinhos OSPF", cmdContains: "show ip ospf neighbor" },
     { id: "checked_interface", label: "Verificou custo da interface", cmdContains: "show ip ospf interface" },

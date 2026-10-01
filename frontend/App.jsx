@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { SessionGate }      from "./src/components/SessionGate.jsx";
 import { StudentLab }       from "./src/components/StudentLab.jsx";
 import { TeacherDashboard } from "./src/components/TeacherDashboard.jsx";
+import { TheoryPage }       from "./src/components/TheorySlides.jsx";
 
 const STORAGE_KEY = "bgplab_session";
 
@@ -20,7 +21,14 @@ function loadSession() {
   } catch { return null; }
 }
 
+// /?teoria=<labId> — teoria do lab em slides, pública (sem sessão nem login)
 export default function App() {
+  const theoryLabId = parseInt(new URLSearchParams(window.location.search).get("teoria"), 10);
+  if (Number.isFinite(theoryLabId)) return <TheoryPage labId={theoryLabId} />;
+  return <MainApp />;
+}
+
+function MainApp() {
   const [mode, setMode]           = useState("loading"); // loading → gate | student | teacher
   const [sessionId, setSessionId] = useState(null);
   const [studentName, setStudentName] = useState(null);

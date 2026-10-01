@@ -275,8 +275,14 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
                       <Badge style={{ background: selectedStyle.bg, color: selectedStyle.color, border: `1px solid ${selectedStyle.border}` }}>{selectedLab.difficulty}</Badge>
                       <Badge style={{ background: "#0a0f1a", color: "#94a3b8", border: "1px solid #1e293b" }}>{selectedLab.duration}</Badge>
                       <Badge style={{ background: "#111827", color: "#9ca3af", border: "1px solid #374151" }}>{selectedLab.routerCount || selectedLab.routers?.length || "?"} FRR</Badge>
+                      {selectedLab.hasTheory && (
+                        <a href={`?teoria=${selectedLab.id}`} target="_blank" rel="noopener"
+                          style={{ marginLeft: "auto", border: "1px solid #3730a3", color: "#a78bfa", padding: "3px 10px", borderRadius: 20, fontSize: 11, textDecoration: "none" }}>
+                          📖 Teoria
+                        </a>
+                      )}
                       <button type="button" onClick={() => openPreview(selectedLab.id)}
-                        style={{ marginLeft: "auto", background: "none", border: "1px solid #1e3a5f", color: "#60a5fa", padding: "3px 10px", borderRadius: 20, cursor: "pointer", fontSize: 11 }}>
+                        style={{ marginLeft: selectedLab.hasTheory ? 0 : "auto", background: "none", border: "1px solid #1e3a5f", color: "#60a5fa", padding: "3px 10px", borderRadius: 20, cursor: "pointer", fontSize: 11 }}>
                         👁 Ver conteúdo
                       </button>
                     </div>
@@ -389,6 +395,7 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
                           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 9 }}>
                             <Badge style={{ background: ds.bg, color: ds.color, border: `1px solid ${ds.border}` }}>{lab.difficulty}</Badge>
                             <Badge style={{ background: "#0a0f1a", color: "#64748b", border: "1px solid #1e293b" }}>{lab.duration}</Badge>
+                            {lab.hasTheory && <Badge style={{ background: "#1e1b4b", color: "#a78bfa", border: "1px solid #3730a3" }}>📖 teoria</Badge>}
                           </div>
                         </button>
                       </Fragment>
@@ -447,6 +454,13 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
                     style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "3px 9px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>✕</button>
                 </div>
                 {previewLab.topic && <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 14px" }}>{previewLab.topic}</p>}
+
+                {previewLab.theorySlides?.length > 0 && (
+                  <a href={`?teoria=${previewLab.id}`} target="_blank" rel="noopener"
+                    style={{ display: "block", background: "#1e1b4b", border: "1px solid #3730a3", borderRadius: 8, padding: "10px 14px", marginBottom: 18, color: "#c4b5fd", fontSize: 12, textDecoration: "none" }}>
+                    📖 <strong>Teoria em slides</strong> ({previewLab.theorySlides.length} slides) — abrir em nova aba →
+                  </a>
+                )}
 
                 {previewLab.scenario && (
                   <div style={{ background: "#052e16", border: "1px solid #166534", borderRadius: 8, padding: "10px 14px", marginBottom: 18 }}>

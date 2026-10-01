@@ -4,6 +4,21 @@ import { useWebSocket, useToasts, useDashboard } from "../hooks/index.js";
 import { Badge, Card, CopyButton, Toasts, CapacityBar, StatusBadge } from "./UI.jsx";
 import { LABS_META } from "../data/labs.js";
 
+// Aviso sonoro curto quando um aluno chama o professor
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.4);
+  } catch {}
+}
+
 // ─── SessionCard ──────────────────────────────────────────────────────────
 // ─── HealthBar — barra de porcentagem colorida por faixa (verde/amarelo/vermelho) ──
 function HealthBar({ label, pct }) {
@@ -36,6 +51,9 @@ function SessionCard({ session, selected, onClick, onKill }) {
           <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: "bold" }}>{session.studentName}</span>
           {session.matricula && <span style={{ color: "#475569", fontSize: 10 }}>({session.matricula})</span>}
           <StatusBadge status={session.status} />
+          {session.teacherCall?.status === "waiting" && (
+            <Badge style={{ background: "#1a1206", color: "#fbbf24", border: "1px solid #f59e0b" }}>🙋 chamou</Badge>
+          )}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <span style={{ color: "#475569", fontSize: 10 }}>Lab {session.labId}</span>
@@ -65,8 +83,82 @@ function SessionCard({ session, selected, onClick, onKill }) {
   );
 }
 
+// ─── ExplanationPanel ─────────────────────────────────────────────────────
+// Roteiro do professor para a explicação guiada do aluno: cada pergunta com o
+// que se espera ouvir (`lookFor`) e uma marcação ok / parcial / não. Grava em
+// explanations.jsonl no backend — registro à parte, não altera a nota.
+const MARKS = [
+  { id: "ok",      label: "✓ Explicou", color: "#4ade80", bg: "#052e16", border: "#166534" },
+  { id: "partial", label: "~ Parcial",  color: "#fbbf24", bg: "#1a1206", border: "#92400e" },
+  { id: "no",      label: "✗ Não",      color: "#f87171", bg: "#450a0a", border: "#7f1d1d" },
+];
+
+function ExplanationPanel({ session, pushToast }) {
+  const [data, setData]   = useState(null);
+  const [items, setItems] = useState({});
+  const [note, setNote]   = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setData(null); setItems({}); setNote("");
+    apiFetch("GET", `/admin/session/${session.id}/explain`).then(setData).catch(() => setData({ explain: [] }));
+  }, [session.id]);
+
+  if (!data) return null;
+  if (!data.explain.length) return null;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiFetch("POST", `/admin/session/${session.id}/explanation`, { items, note });
+      pushToast(`Explicação de ${session.studentName} registrada`, "success");
+    } catch (e) {
+      pushToast("Erro ao registrar: " + e.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const call = session.teacherCall;
+  return (
+    <Card style={{ border: call?.status === "waiting" ? "1px solid #f59e0b" : undefined }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <h4 style={{ margin: 0, color: "#fbbf24", fontSize: 12 }}>🙋 Explicação ao professor</h4>
+        {call?.status === "waiting" && <Badge style={{ background: "#1a1206", color: "#fbbf24", border: "1px solid #92400e" }}>chamou há {Math.max(0, Math.round((Date.now() - call.ts) / 60000))} min</Badge>}
+        {call?.status === "done" && <Badge style={{ background: "#052e16", color: "#4ade80", border: "1px solid #166534" }}>registrada · {call.ok}/{call.total}</Badge>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {data.explain.map((q, i) => (
+          <div key={q.id} style={{ background: "#020817", borderRadius: 8, padding: "10px 12px", border: "1px solid #1e293b" }}>
+            <div style={{ color: "#e2e8f0", fontSize: 12, lineHeight: 1.5, marginBottom: 6 }}>{i + 1}. {q.prompt}</div>
+            {q.lookFor && <div style={{ color: "#64748b", fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>🔎 {q.lookFor}</div>}
+            <div style={{ display: "flex", gap: 6 }}>
+              {MARKS.map((m) => {
+                const on = items[q.id] === m.id;
+                return (
+                  <button key={m.id} onClick={() => setItems((it) => ({ ...it, [q.id]: on ? undefined : m.id }))}
+                    style={{ background: on ? m.bg : "none", color: on ? m.color : "#475569", border: `1px solid ${on ? m.border : "#1e293b"}`, padding: "3px 10px", borderRadius: 5, cursor: "pointer", fontSize: 11 }}>
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+        placeholder="Observações (opcional)"
+        style={{ width: "100%", boxSizing: "border-box", marginTop: 10, background: "#020817", border: "1px solid #1e3a5f", borderRadius: 6, color: "#e2e8f0", padding: "8px 12px", fontSize: 12, fontFamily: "monospace", resize: "vertical" }} />
+      <button onClick={save} disabled={saving}
+        style={{ marginTop: 10, width: "100%", background: "#2d1b00", border: "1px solid #92400e", color: "#fb923c", padding: "9px 0", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+        {saving ? "Gravando..." : "💾 Registrar explicação"}
+      </button>
+    </Card>
+  );
+}
+
 // ─── SessionDetail ─────────────────────────────────────────────────────────
-function SessionDetail({ session, onClose }) {
+function SessionDetail({ session, onClose, pushToast }) {
   const [history, setHistory] = useState(null);
 
   useEffect(() => {
@@ -116,6 +208,8 @@ function SessionDetail({ session, onClose }) {
           )}
         </div>
       </Card>
+
+      <ExplanationPanel session={session} pushToast={pushToast} />
 
       {/* Command history */}
       <Card>
@@ -195,7 +289,11 @@ export function TeacherDashboard({ onExit }) {
   const onWsMsg = useCallback((msg) => {
     if (msg.type === "dashboard") setSnapshot(msg.snapshot);
     if (msg.type === "event")     setEvents((e) => [msg.event, ...e].slice(0, 300));
-  }, [setSnapshot]);
+    if (msg.type === "teacher_call") {
+      pushToast(`🙋 ${msg.student} (Lab ${msg.labId}) está chamando você`, "warning");
+      beep();
+    }
+  }, [setSnapshot, pushToast]);
 
   useWebSocket("teacher", null, onWsMsg);
 
@@ -221,9 +319,10 @@ export function TeacherDashboard({ onExit }) {
   };
 
   const active = (snapshot?.sessions || []).filter((s) => ["provisioning", "running", "idle"].includes(s.status));
+  const calls  = (snapshot?.sessions || []).filter((s) => s.teacherCall?.status === "waiting").sort((a, b) => a.teacherCall.ts - b.teacherCall.ts);
   const capacity = snapshot?.maxStudents || 15;
 
-  const EVENT_ICON = { provision_start: "🚀", provision_done: "✅", provision_error: "❌", cleanup_start: "🧹", cleanup_done: "🗑", auto_cleanup: "⏱", command_exec: "💻", submit: "📝", progress: "🎯", session_created: "👤", manual_cleanup: "✂️", teacher_message: "📣" };
+  const EVENT_ICON = { teacher_call: "🙋", teacher_call_cancel: "🙅", explanation_recorded: "🗣", provision_start: "🚀", provision_done: "✅", provision_error: "❌", cleanup_start: "🧹", cleanup_done: "🗑", auto_cleanup: "⏱", command_exec: "💻", submit: "📝", progress: "🎯", session_created: "👤", manual_cleanup: "✂️", teacher_message: "📣" };
   const EVENT_COLOR = { provision_error: "#f87171", auto_cleanup: "#fbbf24", submit: "#4ade80", progress: "#4ade80", provision_done: "#4ade80", provision_start: "#60a5fa" };
 
   const VIEWS = [
@@ -271,6 +370,19 @@ export function TeacherDashboard({ onExit }) {
         {/* ── Overview ── */}
         {view === "overview" && (
           <div>
+            {calls.length > 0 && (
+              <Card style={{ marginBottom: 20, border: "1px solid #f59e0b", background: "#1a1206" }}>
+                <h3 style={{ margin: "0 0 12px", color: "#fbbf24", fontSize: 12, letterSpacing: 1, textTransform: "uppercase" }}>🙋 Alunos chamando ({calls.length})</h3>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {calls.map((s) => (
+                    <button key={s.id} onClick={() => { setSelected(s); setView("sessions"); }}
+                      style={{ background: "#2d1b00", border: "1px solid #92400e", color: "#fde68a", padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: "monospace" }}>
+                      {s.studentName} · Lab {s.labId} · há {Math.max(0, Math.round((Date.now() - s.teacherCall.ts) / 60000))} min →
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            )}
             {/* Stats */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
               {[
@@ -361,12 +473,21 @@ export function TeacherDashboard({ onExit }) {
                 ))}
               </div>
             </Card>
-            {selected && <SessionDetail session={selected} onClose={() => setSelected(null)} />}
+            {selected && (
+              <SessionDetail
+                session={(snapshot?.sessions || []).find((s) => s.id === selected.id) || selected}
+                onClose={() => setSelected(null)} pushToast={pushToast} />
+            )}
           </div>
         )}
 
         {/* ── Notas ── */}
-        {view === "grades" && <GradesView />}
+        {view === "grades" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <GradesView />
+            <ExplanationsView />
+          </div>
+        )}
 
         {/* ── Events ── */}
         {view === "events" && (
@@ -499,6 +620,57 @@ function GradesView() {
             </tbody>
           </table>
         </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── ExplanationsView — explicações registradas pelo professor ───────────
+function ExplanationsView() {
+  const [records, setRecords] = useState(null);
+
+  useEffect(() => {
+    apiFetch("GET", "/admin/explanations").then((d) => setRecords(d.records || [])).catch(() => setRecords([]));
+  }, []);
+
+  const sorted = (records || []).slice().sort((a, b) => b.ts - a.ts);
+  const markIcon = { ok: "✓", partial: "~", no: "✗" };
+  const markColor = { ok: "#4ade80", partial: "#fbbf24", no: "#f87171" };
+
+  return (
+    <Card>
+      <h3 style={{ margin: "0 0 14px", color: "#e2e8f0", fontSize: 13 }}>🙋 Explicações registradas ({sorted.length})</h3>
+      {records === null ? (
+        <div style={{ color: "#1e293b", fontSize: 12, textAlign: "center", padding: "20px 0" }}>Carregando...</div>
+      ) : sorted.length === 0 ? (
+        <div style={{ color: "#1e293b", fontSize: 12, textAlign: "center", padding: "20px 0" }}>Nenhuma explicação registrada ainda</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #1e293b" }}>
+              {["Matrícula", "Aluno", "Lab", "Perguntas", "Observação", "Data"].map((h) => (
+                <th key={h} style={{ textAlign: "left", padding: "6px 10px", color: "#475569", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: 1 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #0a0f1a", verticalAlign: "top" }}>
+                <td style={{ padding: "7px 10px", color: "#94a3b8" }}>{r.matricula || "—"}</td>
+                <td style={{ padding: "7px 10px", color: "#e2e8f0" }}>{r.studentName}</td>
+                <td style={{ padding: "7px 10px", color: "#60a5fa" }}>Lab {r.labId}</td>
+                <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>
+                  {(r.items || []).map((it) => (
+                    <span key={it.id} title={it.prompt} style={{ color: markColor[it.mark] || "#334155", marginRight: 6, fontWeight: 700 }}>{markIcon[it.mark] || "·"}</span>
+                  ))}
+                  <span style={{ color: "#475569", marginLeft: 4 }}>{r.ok}/{r.total}</span>
+                </td>
+                <td style={{ padding: "7px 10px", color: "#94a3b8", maxWidth: 320 }}>{r.note || "—"}</td>
+                <td style={{ padding: "7px 10px", color: "#475569", whiteSpace: "nowrap" }}>{new Date(r.ts).toLocaleString("pt-BR")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </Card>
   );

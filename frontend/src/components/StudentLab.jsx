@@ -6,6 +6,96 @@ import { Badge, Card, CopyButton, Toasts, TermLine, ProvisioningScreen, ErrorScr
 import { TopologyDiagram } from "./TopologyDiagram.jsx";
 import { PacketAnalyzer } from "./PacketAnalyzer.jsx";
 import XTerminalBase from "./XTerminal.jsx";
+import { TheorySlides, Inline } from "./TheorySlides.jsx";
+
+// ─── ExplainTab ───────────────────────────────────────────────────────────
+// Etapa opcional de fim de lab: quando o professor pede em sala, o aluno o
+// chama pela plataforma e explica o que fez seguindo as perguntas de
+// `lab.explain`. O professor registra a avaliação no painel dele.
+function ExplainTab({ sessionId, questions, teacherCall, setTeacherCall, pushToast }) {
+  const [idx, setIdx] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const status = teacherCall?.status || null;
+
+  const call = async (cancel = false) => {
+    setBusy(true);
+    try {
+      const r = await apiFetch("POST", `/session/${sessionId}/call-teacher`, { cancel });
+      setTeacherCall(r.teacherCall);
+      if (!cancel) pushToast("🙋 Professor chamado — aguarde no seu lugar", "success");
+    } catch (e) {
+      pushToast("Não foi possível chamar o professor: " + e.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const q = questions[Math.min(idx, questions.length - 1)];
+  const navBtn = (disabled) => ({ background: disabled ? "#0a0f1a" : "#0d1f3c", color: disabled ? "#1e293b" : "#60a5fa", border: `1px solid ${disabled ? "#1e293b" : "#1e3a5f"}`, padding: "8px 16px", borderRadius: 8, cursor: disabled ? "default" : "pointer", fontSize: 12, fontFamily: "monospace" });
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "28px 24px", display: "flex", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 820, display: "flex", flexDirection: "column", gap: 18 }}>
+        <div>
+          <h2 style={{ margin: 0, color: "#e2e8f0", fontSize: 22 }}>🙋 Explicar ao professor</h2>
+          <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7, margin: "8px 0 0" }}>
+            Faça esta etapa <strong style={{ color: "#fbbf24" }}>somente se o professor pediu em sala</strong>.
+            Ao terminar o lab, chame o professor e use as perguntas abaixo como roteiro: para cada uma,
+            <strong style={{ color: "#e2e8f0" }}> mostre no terminal</strong> e explique com suas palavras <strong style={{ color: "#e2e8f0" }}>o que fez e por quê</strong>.
+          </p>
+        </div>
+
+        {/* Status do chamado */}
+        {status === "done" ? (
+          <div style={{ background: "#052e16", border: "1px solid #166534", borderRadius: 10, padding: "14px 18px", color: "#86efac", fontSize: 13 }}>
+            ✅ O professor registrou sua explicação{teacherCall.total ? ` (${teacherCall.ok}/${teacherCall.total} pontos explicados com clareza)` : ""}.
+          </div>
+        ) : status === "waiting" ? (
+          <div style={{ background: "#1a1206", border: "1px solid #92400e", borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={{ fontSize: 22 }}>⏳</span>
+            <div style={{ flex: 1, color: "#fde68a", fontSize: 13, lineHeight: 1.6 }}>
+              Professor chamado. Enquanto ele não chega, revise as perguntas e deixe os terminais prontos para mostrar.
+            </div>
+            <button onClick={() => call(true)} disabled={busy}
+              style={{ background: "none", border: "1px solid #92400e", color: "#fbbf24", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: "monospace" }}>
+              Cancelar chamado
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => call(false)} disabled={busy}
+            style={{ background: "linear-gradient(135deg,#f59e0b,#ea580c)", color: "#fff", border: "none", padding: "14px 0", borderRadius: 10, cursor: "pointer", fontSize: 15, fontWeight: "bold", letterSpacing: 1, fontFamily: "monospace" }}>
+            🙋 Chamar professor
+          </button>
+        )}
+
+        {/* Roteiro guiado */}
+        <div style={{ background: "#0a0f1a", border: "1px solid #1e3a5f", borderRadius: 14, padding: "26px 30px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <span style={{ color: "#60a5fa", fontSize: 11, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }}>Pergunta {idx + 1} de {questions.length}</span>
+            <div style={{ display: "flex", gap: 5 }}>
+              {questions.map((_, i) => (
+                <button key={i} onClick={() => setIdx(i)}
+                  style={{ width: 22, height: 22, borderRadius: "50%", border: "none", cursor: "pointer", fontSize: 10, background: i === idx ? "#0ea5e9" : i < idx ? "#1e3a5f" : "#1e293b", color: "#fff" }}>{i + 1}</button>
+              ))}
+            </div>
+          </div>
+          <p style={{ color: "#e2e8f0", fontSize: 19, lineHeight: 1.6, margin: "0 0 22px", minHeight: 90 }}><Inline text={q.prompt} /></p>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <button onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={idx === 0} style={navBtn(idx === 0)}>← Anterior</button>
+            <button onClick={() => setIdx((i) => Math.min(questions.length - 1, i + 1))} disabled={idx === questions.length - 1} style={navBtn(idx === questions.length - 1)}>Próxima →</button>
+          </div>
+        </div>
+
+        <details style={{ color: "#64748b", fontSize: 12 }}>
+          <summary style={{ cursor: "pointer" }}>Ver todas as perguntas</summary>
+          <ol style={{ lineHeight: 1.8, paddingLeft: 22 }}>
+            {questions.map((x) => <li key={x.id}><Inline text={x.prompt} /></li>)}
+          </ol>
+        </details>
+      </div>
+    </div>
+  );
+}
 
 // ─── CommandBlock ──────────────────────────────────────────────────────────
 // Sem botão Executar — aluno deve digitar no terminal (abordagem pedagógica)
@@ -29,7 +119,7 @@ function CommandBlock({ entry }) {
 }
 
 // ─── RoteiroTab ───────────────────────────────────────────────────────────
-function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoChallenge, predictions, setPredictions }) {
+function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoChallenge, onGoExplain, predictions, setPredictions }) {
   const [labData, setLabData] = useState(null);
 
   // Busca dados do lab no backend (fonte autoritativa, com variables{} já
@@ -70,6 +160,13 @@ function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoC
           style={{ padding: "12px 14px", cursor: "pointer", background: "#1a0a00", borderLeft: "3px solid #fb923c" }}>
           <span style={{ color: "#fb923c", fontSize: 11 }}>🏆 Desafio Final</span>
         </div>
+        {onGoExplain && (
+          <div onClick={onGoExplain}
+            style={{ padding: "12px 14px", cursor: "pointer", background: "#1a1206", borderLeft: "3px solid #fbbf24", borderTop: "1px solid #1e293b" }}>
+            <span style={{ color: "#fbbf24", fontSize: 11 }}>🙋 Explicar ao professor</span>
+            <div style={{ color: "#78716c", fontSize: 9, marginTop: 3 }}>se o professor pedir em sala</div>
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -539,6 +636,9 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
   const [score, setScore]                     = useState(null);
   const [roteiroStep, setRoteiroStep]         = useState(0);
   const [predictions, setPredictions]         = useState({}); // predictId -> texto do aluno (roteiro), enviado no submit
+  const [labDetail, setLabDetail]             = useState(null); // teoria (slides) e perguntas da explicação
+  const [theoryIdx, setTheoryIdx]             = useState(0);
+  const [teacherCall, setTeacherCall]         = useState(null);
   const [toasts, pushToast]                   = useToasts();
   const labMeta  = LABS_META.find((l) => l.id === labId);
   const exitTimerRef = useRef(null);
@@ -561,6 +661,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
         const s = await apiFetch("GET", `/session/${sessionId}`);
         setSession(s);
         setProgress(s.progress || {});
+        setTeacherCall(s.teacherCall || null);
         if (["running", "error", "cleaned"].includes(s.status)) {
           clearInterval(interval);
           setProvisionStatus(s.status);
@@ -600,9 +701,17 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
     if (msg.type === "notification") {
       pushToast(msg.message, msg.level || "info", msg.fromTeacher);
     }
-  }, [exitToGate]);
+    if (msg.type === "explanation_done") {
+      apiFetch("GET", `/session/${sessionId}`).then((s) => setTeacherCall(s.teacherCall || null)).catch(() => {});
+      pushToast("✅ O professor registrou sua explicação", "success");
+    }
+  }, [exitToGate, sessionId]);
 
   useWebSocket("student", sessionId, onWsMsg);
+
+  useEffect(() => {
+    fetchLabDetail(sessionId, labId).then(setLabDetail).catch(() => {});
+  }, [sessionId, labId]);
 
   // Ref para injetar comandos no terminal ativo via TerminalTab
   const terminalInjectRef = useRef(null);
@@ -622,13 +731,17 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
   if (provisionStatus === "error")
     return <ErrorScreen message={provisionMsg} onBack={onExit} />;
 
+  const hasTheory  = labDetail?.theorySlides?.length > 0;
+  const hasExplain = labDetail?.explain?.length > 0;
   const TABS = [
     { id: "roteiro",   label: "📋 Roteiro" },
+    hasTheory && { id: "teoria", label: "📖 Teoria" },
     { id: "topology",  label: "🌐 Topologia" },
     { id: "terminal",  label: "💻 Terminal" },
     { id: "challenge", label: "🏆 Desafio" },
+    hasExplain && { id: "explicar", label: teacherCall?.status === "waiting" ? "🙋 Explicar ⏳" : "🙋 Explicar" },
     { id: "wireshark", label: "🔬 Wireshark" },
-  ];
+  ].filter(Boolean);
 
   // Get lab data for topology/analyzer
   const LABS_DATA_MAP = { 1: null, 2: null, 4: null, 9: null };
@@ -690,9 +803,17 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
             onRunCmd={handleRunCmd}
             progress={progress}
             onGoChallenge={() => setActiveTab("challenge")}
+            onGoExplain={hasExplain ? () => setActiveTab("explicar") : null}
             predictions={predictions}
             setPredictions={setPredictions}
           />
+        )}
+        {activeTab === "teoria" && hasTheory && (
+          <TheorySlides slides={labDetail.theorySlides} index={theoryIdx} onIndex={setTheoryIdx} />
+        )}
+        {activeTab === "explicar" && hasExplain && (
+          <ExplainTab sessionId={sessionId} questions={labDetail.explain}
+            teacherCall={teacherCall} setTeacherCall={setTeacherCall} pushToast={pushToast} />
         )}
         {activeTab === "topology" && (
           <TopologyTab labId={labId} sessionStatus={provisionStatus} session={session} sessionId={sessionId} />
