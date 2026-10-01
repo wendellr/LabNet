@@ -318,7 +318,7 @@ function interfacesOf(lab, router) {
 
 const sel = { background: WIRESHARK.bg, border: `1px solid ${WIRESHARK.borderStrong}`, color: WIRESHARK.text, padding: "5px 10px", borderRadius: 6, fontSize: 12, fontFamily: "monospace" };
 
-export function PacketAnalyzer({ sessionId, lab, containers, protocol }) {
+export function PacketAnalyzer({ sessionId, lab, containers, protocol, preset }) {
   const labProtocol = protocol || lab?.protocol || "bgp";
   const defaultFilter = labProtocol === "ospf" ? "ospf" : labProtocol === "bgp" ? "bgp" : "all";
 
@@ -326,9 +326,9 @@ export function PacketAnalyzer({ sessionId, lab, containers, protocol }) {
     ? containers.map((c) => c.split("-").pop().toUpperCase()).sort()
     : (lab?.routers || ["R1"]);
 
-  const [router, setRouter]   = useState(routers[0] || "R1");
-  const [iface, setIface]     = useState("any");
-  const [filterKey, setFilterKey] = useState(defaultFilter);
+  const [router, setRouter]   = useState(preset?.router || routers[0] || "R1");
+  const [iface, setIface]     = useState(preset?.iface || "any");
+  const [filterKey, setFilterKey] = useState(preset?.filter || defaultFilter);
   const [status, setStatus]   = useState("idle"); // idle | connecting | capturing
   const [packets, setPackets] = useState([]);
   const [selectedNo, setSelectedNo] = useState(null);
@@ -346,6 +346,16 @@ export function PacketAnalyzer({ sessionId, lab, containers, protocol }) {
   const stickRef = useRef(true);
 
   const ifaces = interfacesOf(lab, router);
+
+  // Botão "Abrir captura" do roteiro: pré-seleciona roteador/interface/filtro
+  // (só se não houver captura em andamento — não interrompe a do aluno)
+  useEffect(() => {
+    if (!preset || status !== "idle") return;
+    setRouter(preset.router);
+    setIface(preset.iface || "any");
+    if (preset.filter) setFilterKey(preset.filter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset?.nonce]);
 
   useEffect(() => () => wsRef.current?.close(), []);
   useEffect(() => {

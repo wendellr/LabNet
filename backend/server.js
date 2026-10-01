@@ -96,6 +96,7 @@ function createSession(studentName, labId, sessionId = null, matricula = '') {
     error: null,
     materializedLab: null,     // lab com variables{} resolvidas para esta sessão (materializeLab)
     teacherCall: null,         // { status: 'waiting'|'done', ts } — aluno chamou o professor para explicar o lab
+    capturedPackets: [],       // [{ts, router, text}] — pacotes da aba Wireshark, usados na avaliação
   };
 }
 
@@ -867,6 +868,7 @@ function autoEvaluateProgress(session, router, command, output) {
   if (!lab || !lab.autoGrade) return;
 
   for (const check of lab.autoGrade) {
+    if (check.capturePattern) continue; // avaliado em evaluateCaptureProgress
     if (session.progress[check.id]?.completed) continue;
     if (check.router && check.router !== router) continue;
     if (!command.toLowerCase().includes(check.cmdContains?.toLowerCase() || '')) continue;
@@ -883,6 +885,28 @@ function autoEvaluateProgress(session, router, command, output) {
     logEvent('progress', { sessionId: session.id, stepId: check.id, label: check.label });
     broadcastDashboard();
   }
+}
+
+// Checks de autoGrade com `capturePattern`: casam contra cada pacote que o
+// aluno captura na aba Wireshark (texto do tcpdump -vv)
+function evaluateCaptureProgress(session, router, text) {
+  const lab = session.materializedLab || LABS[session.labId];
+  for (const check of (lab?.autoGrade || [])) {
+    if (!check.capturePattern || session.progress[check.id]?.completed) continue;
+    if (check.router && check.router !== router) continue;
+    if (!new RegExp(check.capturePattern, 'i').test(text)) continue;
+    session.progress[check.id] = { completed: true, ts: Date.now(), router, source: 'capture' };
+    broadcast({ type: 'progress', stepId: check.id, label: check.label, message: `✅ ${check.label}` }, 'all', session.id);
+    logEvent('progress', { sessionId: session.id, stepId: check.id, label: check.label });
+    broadcastDashboard();
+  }
+}
+
+// Pacotes capturados pelo aluno (opcionalmente só de um roteador)
+function capturedTexts(session, router) {
+  return (session.capturedPackets || [])
+    .filter(p => !router || p.router === router)
+    .map(p => p.text);
 }
 
 // Submit de respostas do desafio
@@ -1161,6 +1185,21 @@ async function runVerifications(lab, session) {
   // Executa cada verificação contra o estado atual dos roteadores.
   const results = [];
   for (const v of (lab.verifications || [])) {
+    // Verificação por captura: o aluno precisa ter capturado (aba Wireshark)
+    // um pacote que case com `packetPattern` — evidência de que observou
+    if (v.check.type === 'capture') {
+      const regex = new RegExp(v.check.packetPattern, 'i');
+      const texts = capturedTexts(session, v.check.router);
+      const passed = texts.some(t => regex.test(t));
+      results.push({
+        id: v.id, label: v.label, weight: v.weight, passed,
+        detail: passed
+          ? `Pacote encontrado nas capturas${v.check.router ? ` de ${v.check.router}` : ''}`
+          : `Nenhum pacote capturado${v.check.router ? ` em ${v.check.router}` : ''} corresponde (${texts.length} pacotes analisados)`,
+      });
+      continue;
+    }
+
     const { router, cmdPattern, outputPattern } = v.check;
     const regex = new RegExp(outputPattern, 'i');
     const command = v.check.cmd || commandFromPattern(cmdPattern);
@@ -1212,9 +1251,10 @@ async function evaluateAnswers(session, answers) {
   const answerResults = [];
   let ansPts = 0, ansTotal = 0;
 
-  for (const [qid, ans] of Object.entries(answers)) {
-    const key = ANSWER_KEY[qid];
-    if (!key) continue;
+  // Percorre o gabarito inteiro (não só o que foi respondido) — pergunta em
+  // branco conta como zero, em vez de sair do denominador
+  for (const [qid, key] of Object.entries(ANSWER_KEY)) {
+    const ans = answers[qid];
 
     ansTotal += key.points || 10;
     let pts = 0;
@@ -1244,6 +1284,31 @@ async function evaluateAnswers(session, answers) {
       detail = passed
         ? `Correto (${matched.length}/${key.required.length} conceitos mencionados)`
         : `Parcial — conceitos ausentes: ${missing.join(', ')}. Dica: ${key.hint || ''}`;
+
+    } else if (key.type === 'capture') {
+      // Resposta conferida contra a captura do PRÓPRIO aluno: valores como o
+      // seq de uma LSA mudam a cada sessão, então não dá para copiar do colega.
+      // Cada pacote é quebrado em blocos (ex.: por LSA) e o valor é extraído
+      // só dos blocos que casam com blockPattern.
+      const valid = new Set();
+      for (const text of capturedTexts(session, key.router)) {
+        if (key.packetPattern && !new RegExp(key.packetPattern, 'i').test(text)) continue;
+        const blocks = key.blockSplit ? text.split(key.blockSplit) : [text];
+        for (const block of blocks) {
+          if (key.blockPattern && !new RegExp(key.blockPattern, 'i').test(block)) continue;
+          const vm = block.match(new RegExp(key.valuePattern, 'i'));
+          if (vm) valid.add(vm[1].toLowerCase());
+        }
+      }
+      const norm = (x) => String(x || '').toLowerCase().replace(/^0x/, '');
+      const given = String(ans || '').toLowerCase().match(/(0x)?[0-9a-f.]+/g) || [];
+      passed = given.some(g => [...valid].some(v => norm(v) === norm(g)));
+      pts = passed ? (key.points || 10) : 0;
+      detail = passed
+        ? 'Correto — confere com a sua captura'
+        : valid.size === 0
+          ? `Nenhum pacote correspondente nas suas capturas. ${key.hint || ''}`
+          : `Não confere com nenhum valor da sua captura. ${key.hint || ''}`;
     }
 
     ansPts += pts;
@@ -1720,7 +1785,13 @@ async function startCapture(ws, session, router, iface, filterKey) {
   let current = null;
   let flushTimer = null;
   const emit = () => {
-    if (current) send({ type: 'packet', lines: current });
+    if (current) {
+      const text = current.join('\n');
+      session.capturedPackets.push({ ts: Date.now(), router, text });
+      if (session.capturedPackets.length > 3000) session.capturedPackets.splice(0, 500);
+      evaluateCaptureProgress(session, router, text);
+      send({ type: 'packet', lines: current });
+    }
     current = null;
   };
   proc.stdout.on('data', (chunk) => {

@@ -119,7 +119,7 @@ function CommandBlock({ entry }) {
 }
 
 // ─── RoteiroTab ───────────────────────────────────────────────────────────
-function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoChallenge, onGoExplain, predictions, setPredictions }) {
+function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoChallenge, onGoExplain, onOpenCapture, predictions, setPredictions }) {
   const [labData, setLabData] = useState(null);
 
   // Busca dados do lab no backend (fonte autoritativa, com variables{} já
@@ -197,6 +197,24 @@ function RoteiroTab({ labId, sessionId, step, setStep, onRunCmd, progress, onGoC
               <div style={{ color: "#a78bfa", fontSize: 10, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>🎯 Objetivo</div>
               <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap" }}>{cur.description}</p>
             </div>
+          </div>
+        )}
+
+        {/* Passo com captura de pacotes — abre a aba Wireshark já configurada */}
+        {cur.capture && (
+          <div style={{ background: "#0d1726", border: "1px solid #334155", borderRadius: 8, padding: "10px 14px", margin: "0 0 14px", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 18 }}>🔬</span>
+            <div style={{ flex: 1, color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
+              Este passo usa a <strong style={{ color: "#e2e8f0" }}>captura de pacotes</strong>: roteador <strong style={{ color: "#7dd3fc" }}>{cur.capture.router}</strong>,
+              interface <strong style={{ color: "#7dd3fc" }}>{cur.capture.iface === "any" ? "todas" : cur.capture.iface}</strong>,
+              protocolo <strong style={{ color: "#7dd3fc" }}>{(cur.capture.filter || "ospf").toUpperCase()}</strong>.
+            </div>
+            {onOpenCapture && (
+              <button onClick={() => onOpenCapture(cur.capture)}
+                style={{ background: "#064e3b", border: "1px solid #22c55e", color: "#bbf7d0", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                Abrir captura →
+              </button>
+            )}
           </div>
         )}
 
@@ -632,6 +650,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
   // Wireshark fica montado depois da primeira visita (escondido por CSS),
   // senão trocar de aba fecha o WebSocket e a captura para no meio
   const [wiresharkMounted, setWiresharkMounted] = useState(false);
+  const [capturePreset, setCapturePreset] = useState(null); // {router, iface, filter, nonce} vindo do roteiro
   useEffect(() => { if (activeTab === "wireshark") setWiresharkMounted(true); }, [activeTab]);
   const [provisionStatus, setProvisionStatus] = useState("provisioning");
   const [provisionMsg, setProvisionMsg]       = useState("Iniciando containers...");
@@ -808,6 +827,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
             progress={progress}
             onGoChallenge={() => setActiveTab("challenge")}
             onGoExplain={hasExplain ? () => setActiveTab("explicar") : null}
+            onOpenCapture={(c) => { setCapturePreset({ ...c, nonce: Date.now() }); setActiveTab("wireshark"); }}
             predictions={predictions}
             setPredictions={setPredictions}
           />
@@ -835,7 +855,7 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
             pointerEvents: activeTab === "wireshark" ? "auto" : "none",
             zIndex: activeTab === "wireshark" ? 1 : -1,
           }}>
-            <WiresharkTab labId={labId} sessionId={sessionId} session={session} />
+            <WiresharkTab labId={labId} sessionId={sessionId} session={session} preset={capturePreset} />
           </div>
         )}
 
@@ -925,7 +945,7 @@ function TopologyTab({ labId, sessionStatus, session, sessionId }) {
 }
 
 // ─── WiresharkTab ──────────────────────────────────────────────────────────────
-function WiresharkTab({ labId, sessionId, session }) {
+function WiresharkTab({ labId, sessionId, session, preset }) {
   const [labData, setLabData] = useState(null);
 
   useEffect(() => {
@@ -965,6 +985,7 @@ function WiresharkTab({ labId, sessionId, session }) {
             lab={labData}
             protocol={protocol}
             containers={session?.containers || []}
+            preset={preset}
           />
         ) : (
           <div style={{ color: "#475569", fontSize: 12, padding: 24 }}>Carregando…</div>

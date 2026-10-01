@@ -38,6 +38,7 @@ const lab = {
       title: "OSPF — Fundamentos",
       subtitle: "Tudo o que você precisa saber para fazer o Lab 13",
       points: [
+        "Como **ver os pacotes OSPF de verdade** na captura (aba 🔬 Wireshark)",
         "O que é um protocolo **link-state** e por que o OSPF é um deles",
         "Como dois roteadores viram vizinhos: **Hello** e os **estados da adjacência**",
         "O **banco de dados de estado de enlace (LSDB)** e as **LSAs**",
@@ -227,10 +228,21 @@ const lab = {
       ],
     },
     {
+      title: "Vendo o OSPF no fio: a captura de pacotes",
+      points: [
+        "A aba **🔬 Wireshark** captura os pacotes **reais** que passam pela interface de um roteador — os mesmos que o Wireshark mostraria.",
+        "Escolha o **roteador**, a **interface** e o protocolo **OSPF**, e clique em **▶ Iniciar captura**. A captura continua mesmo se você trocar de aba.",
+        "Clique num pacote para ver a **árvore de campos**; passe o mouse em **ⓘ** para a explicação de cada campo.",
+        "Neste lab você vai: (1) ver os **Hellos** chegando a cada 10 s em R2; (2) capturar em **R1** o **LS-Update** que traz a rede nova criada em R3, e o **LS-Ack** que R1 devolve.",
+        "Detalhe que cai na avaliação: no pacote que chega a R1, o **Router-ID** do cabeçalho é de quem **enviou** (R2), mas o **Advertising Router** da LSA é de quem **criou** (R3).",
+      ],
+      note: "A nota confere se você capturou o LS-Update em R1, e uma pergunta pede o seq da LSA — que muda a cada sessão. Não dá para copiar do colega: tem que capturar.",
+    },
+    {
       title: "Ao final: explique ao professor",
       points: [
         "Seu professor pode pedir que você **explique o que fez e por quê**. Use a aba **🙋 Explicar** para chamá-lo e seguir o roteiro de perguntas.",
-        "Você deve conseguir: mostrar e interpretar os vizinhos de R2; explicar o estado **Full**; dizer de onde vem o **custo**; descrever o **LSDB**; mostrar a configuração da rede nova e explicar por que **R1 aprendeu essa rede sem nenhuma configuração nele**.",
+        "Você deve conseguir: mostrar e interpretar os vizinhos de R2; explicar o estado **Full**; dizer de onde vem o **custo**; descrever o **LSDB**; mostrar a configuração da rede nova; explicar por que **R1 aprendeu essa rede sem nenhuma configuração nele** — e mostrar isso **na captura**.",
         "Dica: não decore — rode os comandos e **aponte na saída** onde está cada coisa.",
       ],
     },
@@ -269,6 +281,11 @@ const lab = {
       prompt: "Por que R1 aprendeu a rede nova sem nenhuma configuração nele? Mostre a rota em R1 e explique cada parte da linha.",
       lookFor: "R3 atualizou sua Router LSA, que foi inundada via R2 até R1; R1 rodou o SPF. Linha O>* {{newNet}}.1/32 [110/métrica] via 10.0.12.2, eth1: O = OSPF, > = melhor, * = instalada, 110 = distância administrativa, métrica = soma dos custos. /32 porque é loopback.",
     },
+    {
+      id: "e7",
+      prompt: "Mostre na aba 🔬 Wireshark o LS-Update que trouxe a rede nova até R1. Quem criou a LSA, quem enviou o pacote, e o que R1 respondeu?",
+      lookFor: "Advertising Router 3.3.3.3 (R3 criou), Router-ID 2.2.2.2 no cabeçalho (R2 repassou — flooding), Stub Network {{newNet}}.1 com máscara /32 e metric 0; R1 respondeu com LS-Ack. Sabe explicar por que o seq aumentou (nova versão da LSA).",
+    },
   ],
 
   autoGrade: [
@@ -276,6 +293,10 @@ const lab = {
     { id: "checked_interface", label: "Verificou custo da interface", cmdContains: "show ip ospf interface" },
     { id: "checked_database", label: "Verificou o banco de LSAs", cmdContains: "show ip ospf database" },
     { id: "new_network_added", label: "Adicionou a rede nova em R3", cmdContains: "network {{newNet}}" },
+    // Checks por captura (aba Wireshark) — casam contra o texto de cada pacote
+    { id: "captured_hello", label: "Capturou Hellos OSPF", capturePattern: "OSPFv2, Hello" },
+    { id: "captured_lsu_new_net", label: "Capturou em R1 o LS-Update com a rede nova", router: "R1", capturePattern: "LS-Update[\\s\\S]*Stub Network: {{newNet}}\\.1," },
+    { id: "captured_lsack_r1", label: "Viu R1 confirmar as LSAs com LS-Ack", router: "R1", capturePattern: "10\\.0\\.12\\.1 > [\\d.]+: OSPFv2, LS-Ack" },
   ],
 
   verifications: [
@@ -300,6 +321,12 @@ const lab = {
       label: "R1 (do outro lado da cadeia) já enxerga a rede nova via OSPF",
       weight: 40,
       check: { router: "R1", cmdPattern: "show ip route {{newNet}}\\.1", outputPattern: "{{newNet}}\\.1" },
+    },
+    {
+      id: "capture_lsu_r1",
+      label: "Capturou em R1 o LS-Update que trouxe a rede nova (evidência da inundação)",
+      weight: 20,
+      check: { type: "capture", router: "R1", packetPattern: "LS-Update[\\s\\S]*Stub Network: {{newNet}}\\.1," },
     },
   ],
 
@@ -338,6 +365,40 @@ const lab = {
       correct: "Não — basta que a nova rede esteja coberta por um 'network area' em qualquer roteador da área; o OSPF propaga automaticamente",
       points: 10,
     },
+    predict_hello: {
+      type: "keywords",
+      required: ["10", "224.0.0.5"],
+      points: 10,
+      hint: "Hellos saem a cada Hello Timer (10 s) para o multicast 224.0.0.5 (AllSPFRouters).",
+    },
+    q5: {
+      type: "keywords",
+      required: ["10", "40"],
+      points: 10,
+      hint: "Abra um Hello na captura: a linha 'Hello Timer ..., Dead Timer ...' mostra os dois valores.",
+    },
+    q6: {
+      type: "radio",
+      correct: "Porque o OSPF só conversa com vizinhos diretamente conectados — o pacote não deve ser roteado adiante",
+      points: 10,
+    },
+    q7: {
+      type: "keywords",
+      required: ["2.2.2.2", "3.3.3.3"],
+      points: 15,
+      hint: "O Router-ID do cabeçalho é de quem ENVIOU o pacote (R2, repassando); o Advertising Router é quem CRIOU a LSA (R3).",
+    },
+    // Conferido contra a captura do próprio aluno — o seq muda a cada sessão
+    q8: {
+      type: "capture",
+      router: "R1",
+      packetPattern: "LS-Update",
+      blockSplit: "LSA #",
+      blockPattern: "Stub Network: {{newNet}}\\.1,",
+      valuePattern: "seq (0x[0-9a-f]+)",
+      points: 15,
+      hint: "Capture em R1, abra o LS-Update que contém 'Stub Network: {{newNet}}.1' e copie o valor de seq (ex.: 0x80000007).",
+    },
   },
 
   steps: [
@@ -359,6 +420,19 @@ const lab = {
     },
     {
       id: 2,
+      title: "Ver os Hellos no fio (captura)",
+      theory: "Tudo o que você viu no 'show ip ospf neighbor' é consequência de pacotes trocados entre os roteadores. O principal deles é o Hello: cada roteador envia um Hello por interface a cada Hello Timer (10 s), para o endereço multicast 224.0.0.5 (todos os roteadores OSPF), com TTL 1 — o pacote nunca passa de um salto. Dentro do Hello vão os parâmetros que precisam bater para formar adjacência (área, máscara, Hello/Dead Timer), o DR e o BDR do segmento, e a Neighbor List: os Router IDs de quem esse roteador já ouviu. Quando um roteador vê o próprio Router ID na Neighbor List do vizinho, a comunicação é bidirecional (2-Way).\n\nA aba 🔬 Wireshark captura os pacotes REAIS que passam pela interface do roteador escolhido.",
+      description: "Abra a captura em R2 (interface 'todas', protocolo OSPF) e espere uns 20 segundos.\n\nClique num Hello vindo de R1 (origem 10.0.12.1) e encontre na árvore de campos:\n  • o Router-ID de quem enviou\n  • o Hello Timer e o Dead Timer\n  • o DR e o BDR do segmento\n  • a Neighbor List\n  • o destino (224.0.0.5) e o TTL\n\nCompare o DR/BDR com os papéis (Full/DR, Full/Backup) que o 'show ip ospf neighbor' mostrou no passo anterior. Anote os timers — eles caem no desafio.",
+      capture: { router: "R2", iface: "any", filter: "ospf" },
+      commands: [],
+      expected: "Um Hello de cada lado de cada enlace a cada 10 s, sempre para 224.0.0.5 com TTL 1. No Hello de R1: Router-ID 1.1.1.1, Hello Timer 10s, Dead Timer 40s, máscara 255.255.255.252 e Neighbor List com 2.2.2.2. O DR e o BDR batem com os papéis vistos no 'show ip ospf neighbor'.",
+      predict: {
+        id: "predict_hello",
+        prompt: "Antes de capturar: a cada quantos segundos você espera ver um Hello de cada vizinho, e para qual endereço de destino ele vai?",
+      },
+    },
+    {
+      id: 3,
       title: "Entender o custo e o banco de dados",
       theory: "O custo OSPF de uma interface, por padrão, é calculado como (banda de referência) ÷ (banda da interface) — quanto maior a banda, menor o custo, e menor custo é sempre preferido na escolha de caminho. O comando 'show ip ospf interface' mostra o custo aplicado a cada interface — nos enlaces deste lab, 10. Já 'show ip ospf database' mostra o banco de LSAs conhecido. Numa área única você verá dois tipos: LSAs Type-1 (Router LSA), uma por roteador, cada uma descrevendo os enlaces daquele roteador; e LSAs Type-2 (Network LSA), uma por segmento broadcast, gerada pelo DR daquele segmento e listando os roteadores ligados nele.",
       description: "Rode 'show ip ospf interface' e 'show ip ospf database' em R2 e observe o custo das duas interfaces e as entradas do banco de dados.",
@@ -370,15 +444,16 @@ const lab = {
       expected: "R2 mostra custo 10 em cada interface OSPF. O banco de dados mostra 3 Router LSAs (Type-1, uma por roteador) e 2 Network LSAs (Type-2, uma por enlace /30, gerada pelo DR de cada enlace). R1 já tem rota para a rede entre R2 e R3 (10.0.23.0/30), aprendida via R2, com métrica 20 (10 + 10).",
     },
     {
-      id: 3,
-      title: "Anunciar uma rede nova",
-      theory: "Quando a empresa cresce e uma rede nova precisa entrar no domínio OSPF, o processo é simples: qualquer roteador com uma interface (ou endereço adicional) naquela faixa adiciona um 'network <prefixo> area <área>' correspondente dentro de 'router ospf'. Não é preciso configurar nada nos outros roteadores — a informação se propaga automaticamente para toda a área através das LSAs.\n\nDetalhe importante do FRR: endereços em interface de loopback são sempre anunciados como rota de HOST (/32), não importa a máscara configurada — mesmo cobrindo com 'network .../24 area 0'. Por isso, depois de configurar, procure pelo endereço /32 específico na tabela de rotas, não pelo /24.",
-      description: "Em R3, adicione um endereço adicional no loopback representando a rede nova e cubra com 'network area 0'.\n\nExemplo em R3:\n  configure terminal\n  interface lo\n   ip address {{newNet}}.1/32\n  exit\n  router ospf\n   network {{newNet}}.0/24 area 0\n  end",
+      id: 4,
+      title: "Anunciar uma rede nova — e ver a LSA viajar",
+      theory: "Quando a empresa cresce e uma rede nova precisa entrar no domínio OSPF, o processo é simples: qualquer roteador com uma interface (ou endereço adicional) naquela faixa adiciona um 'network <prefixo> area <área>' correspondente dentro de 'router ospf'. Não é preciso configurar nada nos outros roteadores — a informação se propaga automaticamente para toda a área através das LSAs.\n\nDetalhe importante do FRR: endereços em interface de loopback são sempre anunciados como rota de HOST (/32), não importa a máscara configurada — mesmo cobrindo com 'network .../24 area 0'. Por isso, depois de configurar, procure pelo endereço /32 específico na tabela de rotas, não pelo /24.\n\nNo fio, a mudança aparece assim: R3 gera uma nova versão (seq maior) da sua Router LSA, agora com a rede nova como 'Stub Network', e a envia num LS-Update. R2 recebe, confirma com LS-Ack e REPASSA (flooding) a mesma LSA para R1. Por isso, no pacote que chega a R1, o Router-ID do cabeçalho é o de R2 (quem enviou), mas o Advertising Router da LSA continua sendo R3 (quem criou).",
+      description: "1) ANTES de configurar, abra a captura em R1, interface eth1 (↔ R2), protocolo OSPF, e deixe rodando.\n\n2) No terminal de R3, adicione a rede nova no loopback e cubra com 'network area 0':\n  configure terminal\n  interface lo\n   ip address {{newNet}}.1/32\n  exit\n  router ospf\n   network {{newNet}}.0/24 area 0\n  end\n\n3) Volte à captura em R1 (marque 'ocultar Hello/Keepalive') e encontre o LS-Update que trouxe a rede nova: abra a Router LSA e procure 'Stub Network: {{newNet}}.1'. Anote:\n  • o Router-ID do cabeçalho (quem enviou o pacote)\n  • o Advertising Router (quem criou a LSA)\n  • o seq da LSA — o desafio pede esse valor exato da SUA captura\n\n4) Encontre também o LS-Ack que R1 enviou de volta.\n\n5) Confirme a rota na tabela de R1.",
+      capture: { router: "R1", iface: "eth1", filter: "ospf" },
       commands: [
         { cmd: "show running-config", router: "R3", desc: "Confirme a rede nova configurada" },
         { cmd: "show ip route {{newNet}}.1/32", router: "R1", desc: "Confirme que R1 já enxerga a rede nova (é uma rota /32, não /24 — loopback)" },
       ],
-      expected: "R1, do outro lado da cadeia, já mostra uma rota OSPF /32 para {{newNet}}.1 — sem nenhuma configuração adicional em R1 ou R2.",
+      expected: "Na captura de R1: um LS-Update com Router-ID 2.2.2.2 no cabeçalho (R2 repassou), Advertising Router 3.3.3.3 e uma Router LSA contendo 'Stub Network: {{newNet}}.1, Mask: 255.255.255.255' (/32, porque é loopback). Logo depois, R1 envia um LS-Ack. E a tabela de R1 mostra a rota OSPF {{newNet}}.1/32 com métrica 20 — sem nenhuma configuração em R1 ou R2.",
       predict: {
         id: "predict_step2",
         prompt: "Depois de configurar a rede nova só em R3, você espera que ela apareça na tabela de rotas de R1? Por quê?",
@@ -388,8 +463,9 @@ const lab = {
 
   challenge: {
     title: "Desafio: Consolide os Fundamentos",
-    description: "Você já confirmou as adjacências, entendeu custo e banco de dados, e anunciou uma rede nova de ponta a ponta. Este desafio consolida os conceitos fundamentais antes dos próximos labs, que vão explorar diagnóstico de falhas e engenharia de custo.",
+    description: "Você já confirmou as adjacências, viu os pacotes OSPF no fio, entendeu custo e banco de dados, e acompanhou uma rede nova se espalhando pela área. Este desafio consolida os fundamentos. Parte das respostas vem das SUAS capturas — e a nota também confere se você capturou o LS-Update em R1.",
     hints: [
+      "As perguntas sobre captura usam os pacotes que você capturou na aba 🔬 Wireshark — mantenha a captura de R1 do passo 4",
       "A sequência de estados de adjacência é sempre a mesma, não importa a topologia",
       "Custo menor é sempre preferido",
       "Uma rede nova só precisa ser configurada em UM roteador da área",
@@ -438,6 +514,32 @@ const lab = {
           "Sim, mas só nos roteadores ABR",
           "Não é possível adicionar redes novas sem reiniciar o OSPF",
         ],
+      },
+      {
+        id: "q5",
+        type: "text",
+        text: "Na sua captura, quais são o Hello Timer e o Dead Timer? O que acontece se um vizinho passar um Dead Timer inteiro sem enviar Hello?",
+      },
+      {
+        id: "q6",
+        type: "radio",
+        text: "Por que os pacotes OSPF que você capturou têm TTL 1?",
+        options: [
+          "Porque o OSPF só conversa com vizinhos diretamente conectados — o pacote não deve ser roteado adiante",
+          "Porque o TTL indica a área OSPF do pacote",
+          "Porque o roteador ainda não calculou a rota até o destino",
+          "Porque pacotes multicast sempre têm TTL 1, em qualquer protocolo",
+        ],
+      },
+      {
+        id: "q7",
+        type: "text",
+        text: "No LS-Update que trouxe a rede nova até R1, qual Router-ID aparece no cabeçalho do pacote e qual é o Advertising Router da LSA? Por que são diferentes?",
+      },
+      {
+        id: "q8",
+        type: "text",
+        text: "Qual é o número de sequência (seq) da Router LSA de R3 que carregava a rede nova, na SUA captura em R1? (copie da árvore de campos, ex.: 0x80000007)",
       },
     ],
   },
