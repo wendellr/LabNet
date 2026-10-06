@@ -8,6 +8,22 @@ import { PacketAnalyzer } from "./PacketAnalyzer.jsx";
 import XTerminalBase from "./XTerminal.jsx";
 import { TheorySlides, Inline } from "./TheorySlides.jsx";
 
+// Estado do aluno que precisa sobreviver à troca de aba (as abas desmontam)
+// e a um F5: fica no StudentLab e é espelhado no localStorage por sessão.
+function useSessionState(sessionId, name, initial) {
+  const key = `labnet:${sessionId}:${name}`;
+  const [value, setValue] = useState(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved != null ? JSON.parse(saved) : initial;
+    } catch { return initial; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  }, [key, value]);
+  return [value, setValue];
+}
+
 // ─── ExplainTab ───────────────────────────────────────────────────────────
 // Etapa opcional de fim de lab: quando o professor pede em sala, o aluno o
 // chama pela plataforma e explica o que fez seguindo as perguntas de
@@ -422,11 +438,10 @@ function TerminalTab({ sessionId, containers, injectRef, active, sessionReady })
 
 
 // ─── ChallengeTab ─────────────────────────────────────────────────────────
-function ChallengeTab({ labId, sessionId, onSubmitDone, predictions }) {
+// answers/result vêm do StudentLab: esta aba desmonta ao trocar de aba
+function ChallengeTab({ labId, sessionId, onSubmitDone, predictions, answers, setAnswers, result, setResult }) {
   const [labData, setLabData]   = useState(null);
-  const [answers, setAnswers]   = useState({});
-  const [submitted, setSubmitted] = useState(false);
-  const [result, setResult]     = useState(null);
+  const submitted = result != null;
   const [hint, setHint]         = useState(false);
   const [loading, setLoading]   = useState(false);
 
@@ -445,7 +460,6 @@ function ChallengeTab({ labId, sessionId, onSubmitDone, predictions }) {
       // Previsões do roteiro (cur.predict) entram junto — mesmo answerKey do desafio
       const res = await apiFetch("POST", `/session/${sessionId}/submit`, { answers: { ...predictions, ...answers } });
       setResult(res);
-      setSubmitted(true);
       onSubmitDone?.(res.score);
     } catch (e) {
       alert(e.message);
@@ -574,7 +588,7 @@ function ChallengeTab({ labId, sessionId, onSubmitDone, predictions }) {
             })}
           </div>
 
-          <button onClick={() => { setSubmitted(false); setResult(null); }}
+          <button onClick={() => setResult(null)}
             style={{ background: "#0d1f3c", border: "1px solid #1e3a5f", color: "#60a5fa", padding: "10px 0", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>
             🔄 Tentar Novamente
           </button>
@@ -656,9 +670,11 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
   const [provisionMsg, setProvisionMsg]       = useState("Iniciando containers...");
   const [progress, setProgress]               = useState({});
   const [session, setSession]                 = useState(null);
-  const [score, setScore]                     = useState(null);
   const [roteiroStep, setRoteiroStep]         = useState(0);
-  const [predictions, setPredictions]         = useState({}); // predictId -> texto do aluno (roteiro), enviado no submit
+  const [predictions, setPredictions]         = useSessionState(sessionId, "predictions", {}); // predictId -> texto do aluno (roteiro), enviado no submit
+  const [challengeAnswers, setChallengeAnswers] = useSessionState(sessionId, "answers", {});
+  const [challengeResult, setChallengeResult]   = useSessionState(sessionId, "result", null);
+  const [score, setScore]                     = useState(() => challengeResult?.score ?? null);
   const [labDetail, setLabDetail]             = useState(null); // teoria (slides) e perguntas da explicação
   const [theoryIdx, setTheoryIdx]             = useState(0);
   const [teacherCall, setTeacherCall]         = useState(null);
@@ -843,7 +859,9 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
           <TopologyTab labId={labId} sessionStatus={provisionStatus} session={session} sessionId={sessionId} />
         )}
         {activeTab === "challenge" && (
-          <ChallengeTab labId={labId} sessionId={sessionId} onSubmitDone={setScore} predictions={predictions} />
+          <ChallengeTab labId={labId} sessionId={sessionId} onSubmitDone={setScore} predictions={predictions}
+            answers={challengeAnswers} setAnswers={setChallengeAnswers}
+            result={challengeResult} setResult={setChallengeResult} />
         )}
         {wiresharkMounted && (
           <div style={{
