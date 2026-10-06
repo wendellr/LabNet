@@ -1300,7 +1300,12 @@ async function evaluateAnswers(session, answers) {
           if (vm) valid.add(vm[1].toLowerCase());
         }
       }
-      const norm = (x) => String(x || '').toLowerCase().replace(/^0x/, '');
+      // Endereço pontuado vira inteiro: Area ID "0.0.0.2" e "2" são o mesmo valor
+      const norm = (x) => {
+        const s = String(x || '').toLowerCase().replace(/^0x/, '').replace(/\.+$/, '');
+        const q = s.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+        return q ? String(((+q[1] * 256 + +q[2]) * 256 + +q[3]) * 256 + +q[4]) : s;
+      };
       const given = String(ans || '').toLowerCase().match(/(0x)?[0-9a-f.]+/g) || [];
       passed = given.some(g => [...valid].some(v => norm(v) === norm(g)));
       pts = passed ? (key.points || 10) : 0;
