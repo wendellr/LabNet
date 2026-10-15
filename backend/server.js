@@ -1299,6 +1299,9 @@ async function evaluateAnswers(session, answers) {
           const vm = block.match(new RegExp(key.valuePattern, 'i'));
           if (vm) valid.add(vm[1].toLowerCase());
         }
+        // first: só o primeiro pacote que casa vale (ex.: a 1ª versão de uma
+        // LSA — depois de um clear o seq recomeça em 0x80000001, igual para todos)
+        if (key.first && valid.size) break;
       }
       // Endereço pontuado vira inteiro: Area ID "0.0.0.2" e "2" são o mesmo valor
       const norm = (x) => {
