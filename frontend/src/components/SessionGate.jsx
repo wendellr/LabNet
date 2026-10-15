@@ -1,5 +1,5 @@
-import { useEffect, useState, Fragment } from "react";
-import { apiFetch, TEACHER_TOKEN_KEY } from "../hooks/index.js";
+import { useEffect, useRef, useState, Fragment } from "react";
+import { apiFetch, TEACHER_TOKEN_KEY, STUDENT_TOKEN_KEY } from "../hooks/index.js";
 import { LABS_META, AVAILABLE_LAB_IDS, DIFF_STYLE } from "../data/labs.js";
 import { Badge } from "./UI.jsx";
 
@@ -16,6 +16,46 @@ const TRACK_LABEL = {
   bgp: "🔵 BGP — do básico ao avançado",
   "bgp+ospf": "🟣 OSPF + BGP — integração",
 };
+
+// Botão "Fazer login com o Google" (Google Identity Services). O script do
+// Google é carregado uma vez; o callback recebe o ID token (credential).
+let gsiScriptPromise = null;
+function loadGsiScript() {
+  if (!gsiScriptPromise) {
+    gsiScriptPromise = new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = "https://accounts.google.com/gsi/client";
+      el.async = true;
+      el.onload = resolve;
+      el.onerror = () => { gsiScriptPromise = null; reject(new Error("Não foi possível carregar o login do Google")); };
+      document.head.appendChild(el);
+    });
+  }
+  return gsiScriptPromise;
+}
+
+function GoogleSignInButton({ clientId, onCredential, onError }) {
+  const ref = useRef(null);
+  const cbRef = useRef(onCredential);
+  cbRef.current = onCredential;
+  useEffect(() => {
+    let cancelled = false;
+    loadGsiScript()
+      .then(() => {
+        if (cancelled || !ref.current) return;
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (resp) => cbRef.current(resp.credential),
+        });
+        window.google.accounts.id.renderButton(ref.current, {
+          theme: "filled_black", size: "large", text: "signin_with", shape: "pill", locale: "pt-BR", width: 280,
+        });
+      })
+      .catch((e) => onError?.(e.message));
+    return () => { cancelled = true; };
+  }, [clientId]); // eslint-disable-line
+  return <div ref={ref} style={{ display: "flex", justifyContent: "center", minHeight: 44 }} />;
+}
 
 export function SessionGate({ onSession, onTeacher, resumable, onResume, onForgetResumable, onResumeByLookup }) {
   const [name, setName]           = useState("");
@@ -37,6 +77,48 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState(null);
   const [lookupMatches, setLookupMatches] = useState(null);
+  // Login Google do aluno (só quando o servidor tem GOOGLE_CLIENT_ID)
+  const [student, setStudent] = useState(null);       // { email, name, picture }
+  const [mySessions, setMySessions] = useState(null); // sessões ativas desta conta
+  const googleClientId = publicConfig?.googleClientId || null;
+
+  const loadMySessions = () =>
+    apiFetch("GET", "/session/mine").then((d) => setMySessions(d.matches)).catch(() => setMySessions(null));
+
+  const forgetStudent = () => {
+    try { localStorage.removeItem(STUDENT_TOKEN_KEY); } catch {}
+    setStudent(null);
+    setMySessions(null);
+  };
+
+  // Token salvo de outra visita: confere se ainda vale
+  useEffect(() => {
+    if (!googleClientId) return;
+    let token = null;
+    try { token = localStorage.getItem(STUDENT_TOKEN_KEY); } catch {}
+    if (!token) return;
+    apiFetch("GET", "/auth/me")
+      .then((d) => { setStudent(d.user); if (d.user.matricula) setMatricula((m) => m || d.user.matricula); loadMySessions(); })
+      .catch(forgetStudent);
+  }, [googleClientId]); // eslint-disable-line
+
+  const onGoogleCredential = async (credential) => {
+    setError(null);
+    try {
+      const res = await apiFetch("POST", "/auth/google", { credential });
+      localStorage.setItem(STUDENT_TOKEN_KEY, res.token);
+      setStudent(res.user);
+      if (res.user.matricula) setMatricula((m) => m || res.user.matricula);
+      loadMySessions();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const signOut = () => {
+    window.google?.accounts?.id?.disableAutoSelect?.();
+    forgetStudent();
+  };
 
   const runLookup = async () => {
     if (!lookupName.trim() && !lookupMatricula.trim()) return setLookupError("Digite seu nome e/ou matrícula");
@@ -114,16 +196,18 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
   }, [protocolFilter]); // eslint-disable-line
 
   const startLab = async () => {
-    if (!name.trim()) return setError("Digite seu nome");
+    if (googleClientId && !student) return setError("Entre com sua conta Google para iniciar");
+    if (!googleClientId && !name.trim()) return setError("Digite seu nome");
+    const studentName = googleClientId ? student.name : name.trim();
     setLoading(true);
     setError(null);
     try {
       const data = await apiFetch("POST", "/session", {
-        studentName: name.trim(),
+        studentName,
         labId,
         matricula: matricula.trim() || undefined,
       });
-      onSession(data.sessionId, name.trim(), labId);
+      onSession(data.sessionId, studentName, labId);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -243,20 +327,65 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
               <div>
                 <h3 style={{ margin: "0 0 16px", color: "#e2e8f0", fontSize: 14, letterSpacing: 1 }}>Entrar no Laboratório</h3>
 
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>SEU NOME</label>
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && startLab()}
-                    placeholder="Ex: João Silva"
-                    style={fieldStyle}
-                    autoFocus
-                  />
-                </div>
+                {googleClientId ? (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>SUA CONTA</label>
+                    {student ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#020817", border: "1px solid #1e3a5f", borderRadius: 8, padding: "8px 12px" }}>
+                        {student.picture
+                          ? <img src={student.picture} alt="" referrerPolicy="no-referrer" style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0 }} />
+                          : <span style={{ fontSize: 22 }}>👤</span>}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{student.name}</div>
+                          <div style={{ color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{student.email}</div>
+                        </div>
+                        <button type="button" onClick={signOut}
+                          style={{ background: "none", border: "1px solid #1e293b", color: "#64748b", padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, flexShrink: 0 }}>
+                          Sair
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <GoogleSignInButton clientId={googleClientId} onCredential={onGoogleCredential} onError={setError} />
+                        <div style={{ color: "#475569", fontSize: 10, textAlign: "center", marginTop: 6 }}>
+                          {publicConfig?.googleAllowedDomains?.length
+                            ? `Use sua conta ${publicConfig.googleAllowedDomains.map((d) => "@" + d).join(" ou ")}`
+                            : "Suas notas ficam associadas à sua conta Google"}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>SEU NOME</label>
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && startLab()}
+                      placeholder="Ex: João Silva"
+                      style={fieldStyle}
+                      autoFocus
+                    />
+                  </div>
+                )}
+
+                {/* Sessões desta conta Google ainda rodando — retoma de qualquer navegador */}
+                {student && !resumable && mySessions?.length > 0 && (
+                  <div style={{ marginBottom: 14, background: "#0d1f3c", border: "1px solid #0ea5e9", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ color: "#e2e8f0", fontSize: 11 }}>📎 Você tem {mySessions.length === 1 ? "um lab em andamento" : "labs em andamento"}:</div>
+                    {mySessions.map((m) => (
+                      <button key={m.sessionId} type="button" onClick={() => onResumeByLookup(m.sessionId, m.studentName, m.labId)}
+                        style={{ textAlign: "left", background: "#020817", border: "1px solid #1e3a5f", color: "#67e8f9", padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+                        Voltar para o Lab {m.labId} →
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>MATRÍCULA (OPCIONAL)</label>
+                  <label style={{ color: "#94a3b8", fontSize: 10, display: "block", marginBottom: 6, letterSpacing: 1 }}>
+                    {googleClientId ? "MATRÍCULA (RECOMENDADO — JUNTA SUAS NOTAS ANTERIORES À SUA CONTA)" : "MATRÍCULA (OPCIONAL)"}
+                  </label>
                   <input
                     value={matricula}
                     onChange={(e) => setMatricula(e.target.value)}
@@ -295,8 +424,8 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
                   </div>
                 )}
 
-                <button onClick={startLab} disabled={loading}
-                  style={{ width: "100%", background: loading ? "#1e293b" : "linear-gradient(135deg,#0ea5e9,#6366f1)", color: loading ? "#475569" : "#fff", border: "none", padding: "12px 0", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer", fontSize: 14, fontWeight: "bold", letterSpacing: 1, transition: "all .15s" }}>
+                <button onClick={startLab} disabled={loading || (googleClientId && !student)}
+                  style={{ width: "100%", background: loading || (googleClientId && !student) ? "#1e293b" : "linear-gradient(135deg,#0ea5e9,#6366f1)", color: loading || (googleClientId && !student) ? "#475569" : "#fff", border: "none", padding: "12px 0", borderRadius: 8, cursor: loading || (googleClientId && !student) ? "not-allowed" : "pointer", fontSize: 14, fontWeight: "bold", letterSpacing: 1, transition: "all .15s" }}>
                   {loading ? "⏳ Provisionando containers..." : "🚀 Iniciar Laboratório"}
                 </button>
 
@@ -305,14 +434,14 @@ export function SessionGate({ onSession, onTeacher, resumable, onResume, onForge
                   👨‍🏫 Acesso do Professor
                 </button>
 
-                {!resumable && (
+                {!resumable && !googleClientId && (
                   <button type="button" onClick={() => { setShowLookup((v) => !v); setLookupError(null); setLookupMatches(null); }}
                     style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: "#0ea5e9", cursor: "pointer", fontSize: 11 }}>
                     {showLookup ? "▲ Ocultar" : "🔎 Já tinha uma sessão? Reconectar"}
                   </button>
                 )}
 
-                {showLookup && (
+                {showLookup && !googleClientId && (
                   <div style={{ marginTop: 8, background: "#020817", border: "1px solid #1e3a5f", borderRadius: 8, padding: 12 }}>
                     <input value={lookupName} onChange={(e) => setLookupName(e.target.value)}
                       placeholder="Seu nome" style={{ ...fieldStyle, marginBottom: 8, padding: "7px 10px", fontSize: 12 }} />

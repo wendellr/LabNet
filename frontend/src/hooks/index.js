@@ -7,11 +7,14 @@ export const API_BASE =
     : "http://localhost:3000";
 
 export const TEACHER_TOKEN_KEY = "labnet_teacher_token";
+export const STUDENT_TOKEN_KEY = "labnet_student_token"; // login Google do aluno
 
 export async function apiFetch(method, path, body) {
   const headers = { "Content-Type": "application/json" };
   const teacherToken = localStorage.getItem(TEACHER_TOKEN_KEY);
   if (teacherToken) headers.Authorization = `Bearer ${teacherToken}`;
+  const studentToken = localStorage.getItem(STUDENT_TOKEN_KEY);
+  if (studentToken) headers["X-Student-Token"] = studentToken;
 
   const res = await fetch(`${API_BASE}/api${path}`, {
     method,

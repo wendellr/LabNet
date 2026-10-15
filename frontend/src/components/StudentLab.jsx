@@ -805,8 +805,11 @@ export function StudentLab({ sessionId, studentName, labId, onExit, onBack }) {
           {score !== null && (
             <span style={{ color: score >= 60 ? "#4ade80" : "#f87171", fontSize: 12 }}>🎯 {score}%</span>
           )}
-          <div style={{ background: "#052e16", color: "#4ade80", padding: "3px 10px", borderRadius: 20, fontSize: 11, border: "1px solid #166534" }}>
-            👤 {studentName}
+          <div style={{ background: "#052e16", color: "#4ade80", padding: session?.studentPicture ? "2px 10px 2px 3px" : "3px 10px", borderRadius: 20, fontSize: 11, border: "1px solid #166534", display: "flex", alignItems: "center", gap: 6 }}>
+            {session?.studentPicture
+              ? <img src={session.studentPicture} alt="" referrerPolicy="no-referrer" style={{ width: 20, height: 20, borderRadius: "50%" }} />
+              : "👤"}
+            {studentName}
           </div>
         </div>
       </div>

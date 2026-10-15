@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const os = require('os');
 const cors = require('cors');
 const { Resend } = require('resend');
+const { OAuth2Client } = require('google-auth-library');
 
 // ─── Email (Resend) ──────────────────────────────────────────────────────────
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
@@ -73,12 +74,129 @@ function requireTeacher(req, res, next) {
   next();
 }
 
+// ─── Login do aluno com Google ───────────────────────────────────────────────
+// Com GOOGLE_CLIENT_ID definido, o aluno entra pelo botão do Google (Google
+// Identity Services): o frontend recebe um ID token assinado pelo Google e o
+// troca aqui por um token do LabNet. Sem GOOGLE_CLIENT_ID, vale o formulário
+// de nome/matrícula de antes. GOOGLE_ALLOWED_DOMAINS (opcional, separado por
+// vírgula) restringe a e-mails desses domínios.
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
+const GOOGLE_ALLOWED_DOMAINS = (process.env.GOOGLE_ALLOWED_DOMAINS || '')
+  .split(',').map(d => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+const STUDENT_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+
+// Token do aluno = payload + HMAC. Assinado (não guardado em memória) para
+// sobreviver a restart do backend; o segredo fica no .env ou num arquivo
+// gerado uma vez em LAB_BASE_DIR.
+function loadStudentTokenSecret() {
+  if (process.env.STUDENT_TOKEN_SECRET) return process.env.STUDENT_TOKEN_SECRET;
+  const file = path.join(CONFIG.LAB_BASE_DIR, '.student-token-secret');
+  try {
+    return fsSync.readFileSync(file, 'utf8').trim();
+  } catch {
+    const secret = crypto.randomBytes(32).toString('hex');
+    try {
+      fsSync.mkdirSync(CONFIG.LAB_BASE_DIR, { recursive: true });
+      fsSync.writeFileSync(file, secret, { mode: 0o600 });
+    } catch (e) {
+      console.log(`[auth] não foi possível gravar ${file} (${e.message}) — tokens de aluno não sobrevivem a restart`);
+    }
+    return secret;
+  }
+}
+const STUDENT_TOKEN_SECRET = GOOGLE_CLIENT_ID ? loadStudentTokenSecret() : '';
+
+function signStudentToken(user) {
+  const payload = Buffer.from(JSON.stringify({ ...user, exp: Date.now() + STUDENT_TOKEN_TTL_MS })).toString('base64url');
+  const sig = crypto.createHmac('sha256', STUDENT_TOKEN_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+function verifyStudentToken(token) {
+  if (!STUDENT_TOKEN_SECRET || typeof token !== 'string') return null;
+  const [payload, sig] = token.split('.');
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac('sha256', STUDENT_TOKEN_SECRET).update(payload).digest('base64url');
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const user = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return user.exp > Date.now() ? user : null;
+  } catch { return null; }
+}
+
+function studentFromReq(req) {
+  return verifyStudentToken(req.headers['x-student-token']);
+}
+
+// ─── Perfis de aluno (conta Google) e vínculo com registros antigos ──────────
+// student-profiles.json: email -> { email, name, picture, matriculas[],
+// linkedNames[], firstSeen, lastSeen }. Os registros de nota antigos (sem
+// e-mail, de antes do login Google) NÃO são reescritos: o vínculo é
+// calculado na leitura — por matrícula (automático, se só uma conta usou
+// aquela matrícula) ou por nome (confirmado pelo professor em linkedNames).
+const STUDENT_PROFILES_PATH = path.join(CONFIG.LAB_BASE_DIR, 'student-profiles.json');
+let studentProfiles = {};
+try { studentProfiles = JSON.parse(fsSync.readFileSync(STUDENT_PROFILES_PATH, 'utf8')); } catch {}
+
+function saveStudentProfiles() {
+  const tmp = STUDENT_PROFILES_PATH + '.tmp';
+  return fs.mkdir(CONFIG.LAB_BASE_DIR, { recursive: true })
+    .then(() => fs.writeFile(tmp, JSON.stringify(studentProfiles, null, 1)))
+    .then(() => fs.rename(tmp, STUDENT_PROFILES_PATH))
+    .catch(e => console.log(`[profiles] falha ao gravar: ${e.message}`));
+}
+
+function upsertStudentProfile(user, matricula) {
+  const p = studentProfiles[user.email] || { email: user.email, matriculas: [], linkedNames: [], firstSeen: Date.now() };
+  p.name = user.name || p.name;
+  p.picture = user.picture || p.picture || '';
+  p.lastSeen = Date.now();
+  const m = String(matricula || '').trim();
+  if (m && !p.matriculas.includes(m)) p.matriculas.push(m);
+  studentProfiles[user.email] = p;
+  saveStudentProfiles();
+  return p;
+}
+
+// "Luiz Kayo Souza" == "luiz  kayo souza" (sem acento, caixa, espaços)
+function normName(s) {
+  return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+}
+
+// matrícula -> e-mails que a usaram; só vincula quando há exatamente um
+function matriculaOwners() {
+  const owners = {};
+  for (const p of Object.values(studentProfiles)) {
+    for (const m of p.matriculas || []) (owners[m] = owners[m] || new Set()).add(p.email);
+  }
+  return owners;
+}
+
+// A quem pertence um registro de nota/explicação: { email, via } ou null
+function resolveRecordOwner(record, owners = matriculaOwners()) {
+  if (record.studentEmail) return { email: record.studentEmail, via: 'google' };
+  const m = String(record.matricula || '').trim();
+  if (m && owners[m]?.size === 1) return { email: [...owners[m]][0], via: 'matricula' };
+  const n = normName(record.studentName);
+  for (const p of Object.values(studentProfiles)) {
+    if ((p.linkedNames || []).includes(n)) return { email: p.email, via: 'nome' };
+  }
+  return null;
+}
+
+function publicProfile(p) {
+  return p && { email: p.email, name: p.name, picture: p.picture || '' };
+}
+
 // ─── Modelos ───────────────────────────────────────────────────────────────
-function createSession(studentName, labId, sessionId = null, matricula = '') {
+function createSession(studentName, labId, sessionId = null, matricula = '', studentEmail = '', studentPicture = '') {
   const id = sessionId || crypto.randomBytes(8).toString('hex');
   return {
     id,
     studentName,
+    studentEmail: studentEmail || '', // conta Google do aluno (vazio sem login Google)
+    studentPicture: studentPicture || '',
     matricula: matricula || '',
     labId,
     status: 'provisioning',   // provisioning | running | idle | cleaning | cleaned
@@ -166,6 +284,8 @@ function getDashboardSnapshot() {
     list.push({
       id: s.id,
       studentName: s.studentName,
+      studentEmail: s.studentEmail || '',
+      studentPicture: s.studentPicture || '',
       matricula: s.matricula || '',
       labId: s.labId,
       status: s.status,
@@ -753,7 +873,19 @@ setInterval(async () => {
 
 // Criar nova sessão de lab
 app.post('/api/session', async (req, res) => {
-  const { studentName, labId, matricula } = req.body;
+  const { labId, matricula } = req.body;
+  let { studentName } = req.body;
+  let studentEmail = '', studentPicture = '';
+  // Com login Google ligado, nome e e-mail vêm da conta — não do formulário
+  if (GOOGLE_CLIENT_ID) {
+    const user = studentFromReq(req);
+    if (!user) return res.status(401).json({ error: 'Entre com sua conta Google para iniciar o laboratório' });
+    studentName = user.name || user.email;
+    studentEmail = user.email;
+    studentPicture = user.picture || '';
+    // A matrícula informada liga as notas antigas (sem login) a esta conta
+    upsertStudentProfile(user, matricula);
+  }
   if (!studentName || labId === undefined || labId === null) return res.status(400).json({ error: 'studentName e labId obrigatórios' });
 
   const active = [...sessions.values()].filter(s => ['provisioning','running','idle'].includes(s.status));
@@ -761,9 +893,9 @@ app.post('/api/session', async (req, res) => {
     return res.status(503).json({ error: `Capacidade máxima atingida (${CONFIG.MAX_STUDENTS} alunos). Tente em alguns minutos.` });
   }
 
-  const session = createSession(studentName, labId, null, matricula);
+  const session = createSession(studentName, labId, null, matricula, studentEmail, studentPicture);
   sessions.set(session.id, session);
-  logEvent('session_created', { sessionId: session.id, student: studentName, matricula: session.matricula, labId });
+  logEvent('session_created', { sessionId: session.id, student: studentName, email: studentEmail, matricula: session.matricula, labId });
   broadcastDashboard();
 
   // Provisiona em background
@@ -775,6 +907,17 @@ app.post('/api/session', async (req, res) => {
   });
 
   res.json({ sessionId: session.id, status: 'provisioning' });
+});
+
+// Sessões ativas do aluno logado com Google — permite retomar o lab de
+// qualquer navegador/dispositivo. Também precisa vir antes de '/:id'.
+app.get('/api/session/mine', (req, res) => {
+  const user = studentFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Não autenticado' });
+  const matches = [...sessions.values()]
+    .filter(s => ['provisioning', 'running', 'idle'].includes(s.status) && s.studentEmail === user.email)
+    .map(s => ({ sessionId: s.id, labId: s.labId, studentName: s.studentName, createdAt: s.createdAt }));
+  res.json({ matches });
 });
 
 // Reconexão: acha uma sessão ativa do aluno por nome e/ou matrícula, para
@@ -805,7 +948,7 @@ app.get('/api/session/:id', (req, res) => {
   const s = sessions.get(req.params.id);
   if (!s) return res.status(404).json({ error: 'Sessão não encontrada' });
   res.json({
-    id: s.id, studentName: s.studentName, matricula: s.matricula || '', labId: s.labId,
+    id: s.id, studentName: s.studentName, studentEmail: s.studentEmail || '', studentPicture: s.studentPicture || '', matricula: s.matricula || '', labId: s.labId,
     status: s.status, containers: s.containers,
     commandCount: s.commandHistory.length,
     progress: s.progress, score: s.score,
@@ -963,6 +1106,7 @@ app.post('/api/session/:id/submit', async (req, res) => {
     ts: Date.now(),
     sessionId: session.id,
     studentName: session.studentName,
+    studentEmail: session.studentEmail || '',
     matricula: session.matricula || '',
     labId: session.labId,
     labTitle: submittedLab?.title || `Lab ${session.labId}`,
@@ -1042,6 +1186,7 @@ async function sendResultEmail(session, answers, score, feedback, verResults = [
       <div>
         <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px">Aluno</div>
         <div style="font-size:18px;font-weight:600;color:#1e293b;margin-top:2px">${session.studentName}</div>
+        ${session.studentEmail ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px">${session.studentEmail}</div>` : ''}
         ${session.matricula ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px">Matrícula: ${session.matricula}</div>` : ''}
       </div>
       <div>
@@ -1369,9 +1514,73 @@ app.get('/api/admin/dashboard', requireTeacher, (req, res) => {
 });
 
 // Histórico completo de notas (persistente) — para o painel "Notas" do professor
+// Cada registro vem com `owner` (conta Google a que pertence, e como foi
+// vinculado: google | matricula | nome) — ver resolveRecordOwner
 app.get('/api/admin/grades', requireTeacher, async (req, res) => {
-  const records = await readGradeRecords();
+  const owners = matriculaOwners();
+  const records = (await readGradeRecords()).map(r => {
+    const o = resolveRecordOwner(r, owners);
+    return { ...r, owner: o && { ...publicProfile(studentProfiles[o.email] || { email: o.email }), via: o.via } };
+  });
   res.json({ records });
+});
+
+// Alunos com conta Google + registros antigos ainda sem dono, com sugestões
+// por nome (todas as palavras de um nome contidas no outro) para o
+// professor confirmar
+app.get('/api/admin/students', requireTeacher, async (req, res) => {
+  const owners = matriculaOwners();
+  const records = await readGradeRecords();
+  const students = Object.values(studentProfiles).map(p => {
+    const mine = records.filter(r => resolveRecordOwner(r, owners)?.email === p.email);
+    return {
+      ...publicProfile(p), matriculas: p.matriculas || [], linkedNames: p.linkedNames || [],
+      firstSeen: p.firstSeen, lastSeen: p.lastSeen,
+      submissions: mine.length,
+      avg: mine.length ? Math.round(mine.reduce((sum, r) => sum + (r.score || 0), 0) / mine.length) : null,
+      labs: [...new Set(mine.map(r => r.labId))].sort((a, b) => a - b),
+    };
+  }).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+
+  // Registros sem dono agrupados por nome normalizado
+  const groups = {};
+  for (const r of records) {
+    if (resolveRecordOwner(r, owners)) continue;
+    const key = normName(r.studentName);
+    if (!key) continue;
+    const g = groups[key] || (groups[key] = { key, names: new Set(), matriculas: new Set(), count: 0, lastTs: 0 });
+    g.names.add(r.studentName); if (r.matricula) g.matriculas.add(r.matricula);
+    g.count++; g.lastTs = Math.max(g.lastTs, r.ts || 0);
+  }
+  const words = (s) => new Set(normName(s).split(' '));
+  const contains = (a, b) => [...a].every(w => b.has(w));
+  const conflicts = Object.entries(owners).filter(([, set]) => set.size > 1).map(([m, set]) => ({ matricula: m, emails: [...set] }));
+  const unlinked = Object.values(groups).map(g => {
+    const gw = words(g.key);
+    const suggestions = Object.values(studentProfiles)
+      .filter(p => { const pw = words(p.name); return contains(gw, pw) || contains(pw, gw); })
+      .map(p => p.email);
+    return { key: g.key, names: [...g.names], matriculas: [...g.matriculas], count: g.count, lastTs: g.lastTs, suggestions };
+  }).sort((a, b) => b.lastTs - a.lastTs);
+
+  res.json({ students, unlinked, conflicts });
+});
+
+// Professor confirma (ou desfaz) que registros antigos com um nome são de um aluno
+app.post('/api/admin/students/link', requireTeacher, async (req, res) => {
+  const { email, name, unlink } = req.body || {};
+  const p = studentProfiles[email];
+  const key = normName(name);
+  if (!p || !key) return res.status(400).json({ error: 'Aluno ou nome inválido' });
+  p.linkedNames = (p.linkedNames || []).filter(n => n !== key);
+  if (!unlink) {
+    // um nome só pode estar ligado a um aluno
+    for (const other of Object.values(studentProfiles)) other.linkedNames = (other.linkedNames || []).filter(n => n !== key);
+    p.linkedNames.push(key);
+  }
+  await saveStudentProfiles();
+  logEvent('student_link', { email, name: key, unlink: !!unlink });
+  res.json({ ok: true });
 });
 
 // Forçar cleanup de uma sessão
@@ -1438,6 +1647,7 @@ app.post('/api/admin/session/:id/explanation', requireTeacher, async (req, res) 
     ts: Date.now(),
     sessionId: session.id,
     studentName: session.studentName,
+    studentEmail: session.studentEmail || '',
     matricula: session.matricula || '',
     labId: session.labId,
     labTitle: lab?.title || `Lab ${session.labId}`,
@@ -1524,6 +1734,35 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Auth do aluno (Google) ──────────────────────────────────────────────────
+app.post('/api/auth/google', async (req, res) => {
+  if (!googleClient) return res.status(404).json({ error: 'Login Google não configurado' });
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken: String(req.body?.credential || ''), audience: GOOGLE_CLIENT_ID });
+    payload = ticket.getPayload();
+  } catch (e) {
+    return res.status(401).json({ error: 'Login Google inválido ou expirado — tente de novo' });
+  }
+  const email = String(payload.email || '').toLowerCase();
+  if (!email || !payload.email_verified) return res.status(401).json({ error: 'Conta Google sem e-mail verificado' });
+  if (GOOGLE_ALLOWED_DOMAINS.length && !GOOGLE_ALLOWED_DOMAINS.includes(email.split('@')[1])) {
+    return res.status(403).json({ error: `Use sua conta institucional (${GOOGLE_ALLOWED_DOMAINS.map(d => '@' + d).join(', ')})` });
+  }
+  const user = { sub: payload.sub, email, name: payload.name || email, picture: payload.picture || '' };
+  const profile = upsertStudentProfile(user);
+  logEvent('student_login', { student: user.name, email });
+  // matrícula: a última usada, para o formulário vir preenchido
+  res.json({ token: signStudentToken(user), user: { ...user, matricula: profile.matriculas.at(-1) || '' } });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const user = studentFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Não autenticado' });
+  const profile = studentProfiles[user.email];
+  res.json({ user: { email: user.email, name: user.name, picture: user.picture, matricula: profile?.matriculas?.at(-1) || '' } });
+});
+
 // ─── Labs API — serve dados do lab ao frontend ───────────────────────────────
 app.get('/api/labs', (req, res) => {
   const meta = Object.values(LABS)
@@ -1589,6 +1828,8 @@ app.get('/api/config/public', (req, res) => {
   res.json({
     maxStudents: CONFIG.MAX_STUDENTS,
     inactivityTimeoutMinutes: Math.round(CONFIG.INACTIVITY_TIMEOUT_MS / 60000),
+    googleClientId: GOOGLE_CLIENT_ID || null,
+    googleAllowedDomains: GOOGLE_ALLOWED_DOMAINS,
   });
 });
 

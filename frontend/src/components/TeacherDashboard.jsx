@@ -21,6 +21,19 @@ function beep() {
 
 // ─── SessionCard ──────────────────────────────────────────────────────────
 // ─── HealthBar — barra de porcentagem colorida por faixa (verde/amarelo/vermelho) ──
+// Foto da conta Google (ou iniciais, para quem entrou sem login Google)
+function Avatar({ picture, name, size = 22 }) {
+  if (picture) return <img src={picture} alt="" referrerPolicy="no-referrer" style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0 }} />;
+  const initials = String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+  return (
+    <span style={{ width: size, height: size, borderRadius: "50%", background: "#1e293b", color: "#94a3b8", fontSize: size * 0.42, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      {initials || "?"}
+    </span>
+  );
+}
+
+const VIA_LABEL = { google: "conta Google", matricula: "vinculado pela matrícula", nome: "vinculado pelo nome" };
+
 function HealthBar({ label, pct }) {
   const color = pct >= 85 ? "#f87171" : pct >= 60 ? "#fbbf24" : "#4ade80";
   return (
@@ -48,8 +61,10 @@ function SessionCard({ session, selected, onClick, onKill }) {
       style={{ background: selected ? "#0d1f3c" : "#020817", borderRadius: 10, padding: 14, border: `1px solid ${selected ? "#0ea5e9" : "#1e293b"}`, cursor: "pointer", transition: "all .15s" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Avatar picture={session.studentPicture} name={session.studentName} />
           <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: "bold" }}>{session.studentName}</span>
           {session.matricula && <span style={{ color: "#475569", fontSize: 10 }}>({session.matricula})</span>}
+          {session.studentEmail && <span style={{ color: "#475569", fontSize: 10 }}>{session.studentEmail}</span>}
           <StatusBadge status={session.status} />
           {session.teacherCall?.status === "waiting" && (
             <Badge style={{ background: "#1a1206", color: "#fbbf24", border: "1px solid #f59e0b" }}>🙋 chamou</Badge>
@@ -178,7 +193,8 @@ function SessionDetail({ session, onClose, pushToast }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-          <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>🔍 {session.studentName}{session.matricula ? ` (${session.matricula})` : ""}</h3>
+          <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 15 }}>🔍 {session.studentName}{session.matricula ? ` (${session.matricula})` : ""}
+            {session.studentEmail && <span style={{ color: "#64748b", fontSize: 11, fontWeight: 400, marginLeft: 8 }}>{session.studentEmail}</span>}</h3>
           <button onClick={onClose} style={{ background: "none", border: "1px solid #1e293b", color: "#475569", padding: "2px 8px", borderRadius: 4, cursor: "pointer", fontSize: 10 }}>✕</button>
         </div>
 
@@ -335,6 +351,7 @@ export function TeacherDashboard({ onExit }) {
     { id: "overview", label: "📊 Visão Geral" },
     { id: "sessions", label: "👥 Sessões" },
     { id: "grades",   label: "🎓 Notas" },
+    { id: "students", label: "🧑‍🎓 Alunos" },
     { id: "events",   label: "📡 Eventos" },
     { id: "email",    label: "📧 Email" },
   ];
@@ -487,6 +504,9 @@ export function TeacherDashboard({ onExit }) {
           </div>
         )}
 
+        {/* ── Alunos (contas Google e vínculo com registros antigos) ── */}
+        {view === "students" && <StudentsView pushToast={pushToast} />}
+
         {/* ── Notas ── */}
         {view === "grades" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -548,7 +568,8 @@ function GradesView() {
   const filtered = (records || []).filter((r) => {
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
-    return (r.matricula || "").toLowerCase().includes(q) || (r.studentName || "").toLowerCase().includes(q);
+    return (r.matricula || "").toLowerCase().includes(q) || (r.studentName || "").toLowerCase().includes(q)
+      || (r.owner?.email || "").toLowerCase().includes(q) || (r.owner?.name || "").toLowerCase().includes(q);
   }).sort((a, b) => b.ts - a.ts);
 
   const summary = search.trim() && filtered.length > 0
@@ -556,9 +577,9 @@ function GradesView() {
     : null;
 
   const exportCsv = () => {
-    const header = ["Matrícula", "Aluno", "Lab", "Nota", "Data"];
+    const header = ["Matrícula", "Aluno", "E-mail", "Lab", "Nota", "Data"];
     const rows = filtered.map((r) => [
-      r.matricula || "", r.studentName || "", r.labTitle || `Lab ${r.labId}`, r.score,
+      r.matricula || "", r.studentName || "", r.owner?.email || "", r.labTitle || `Lab ${r.labId}`, r.score,
       new Date(r.ts).toLocaleString("pt-BR"),
     ]);
     const csv = [header, ...rows]
@@ -581,7 +602,7 @@ function GradesView() {
         <h3 style={{ margin: 0, color: "#e2e8f0", fontSize: 13 }}>🎓 Histórico de Notas ({filtered.length})</h3>
         <div style={{ display: "flex", gap: 8 }}>
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por matrícula ou nome..."
+            placeholder="Buscar por matrícula, nome ou e-mail..."
             style={{ background: "#020817", border: "1px solid #1e3a5f", borderRadius: 6, color: "#e2e8f0", padding: "6px 12px", fontSize: 12, minWidth: 220 }} />
           <button onClick={exportCsv} disabled={filtered.length === 0}
             style={{ background: "#052e16", border: "1px solid #166534", color: "#4ade80", padding: "6px 14px", borderRadius: 6, cursor: filtered.length ? "pointer" : "not-allowed", fontSize: 12 }}>
@@ -617,7 +638,19 @@ function GradesView() {
               {filtered.map((r, i) => (
                 <tr key={i} style={{ borderBottom: "1px solid #0a0f1a" }}>
                   <td style={{ padding: "7px 10px", color: "#94a3b8" }}>{r.matricula || "—"}</td>
-                  <td style={{ padding: "7px 10px", color: "#e2e8f0" }}>{r.studentName}</td>
+                  <td style={{ padding: "7px 10px", color: "#e2e8f0" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <Avatar picture={r.owner?.picture} name={r.owner?.name || r.studentName} />
+                      <div>
+                        {r.studentName}
+                        {r.owner && (
+                          <div style={{ color: "#475569", fontSize: 10 }} title={VIA_LABEL[r.owner.via]}>
+                            {r.owner.email}{r.owner.via !== "google" && <span style={{ color: "#a78bfa" }}> · {r.owner.via === "matricula" ? "pela matrícula" : "pelo nome"}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
                   <td style={{ padding: "7px 10px", color: "#60a5fa" }}>{r.labTitle || `Lab ${r.labId}`}</td>
                   <td style={{ padding: "7px 10px", color: r.score >= 60 ? "#4ade80" : "#f87171", fontWeight: 700 }}>{r.score}</td>
                   <td style={{ padding: "7px 10px", color: "#475569" }}>{new Date(r.ts).toLocaleString("pt-BR")}</td>
@@ -628,6 +661,140 @@ function GradesView() {
         </div>
       )}
     </Card>
+  );
+}
+
+// ─── StudentsView — alunos com conta Google e vínculo de registros antigos ─
+// Registros de antes do login Google são ligados automaticamente pela
+// matrícula; os sem matrícula aparecem aqui com sugestões por nome para o
+// professor confirmar. Nada é reescrito no histórico — dá para desfazer.
+function StudentsView({ pushToast }) {
+  const [data, setData] = useState(null);
+  const [manual, setManual] = useState({}); // key do grupo -> email escolhido
+
+  const load = () => apiFetch("GET", "/admin/students").then(setData).catch(() => setData({ students: [], unlinked: [], conflicts: [] }));
+  useEffect(() => { load(); }, []);
+
+  const link = async (email, name, unlink = false) => {
+    try {
+      await apiFetch("POST", "/admin/students/link", { email, name, unlink });
+      pushToast(unlink ? `Vínculo de "${name}" desfeito` : `"${name}" vinculado a ${email}`, "success");
+      load();
+    } catch (e) { pushToast(e.message, "error"); }
+  };
+
+  if (!data) return <Card><div style={{ color: "#1e293b", fontSize: 12, textAlign: "center", padding: "30px 0" }}>Carregando...</div></Card>;
+  const byEmail = Object.fromEntries(data.students.map((st) => [st.email, st]));
+  const th = { textAlign: "left", padding: "6px 10px", color: "#475569", fontWeight: 600, textTransform: "uppercase", fontSize: 10, letterSpacing: 1 };
+  const td = { padding: "7px 10px", verticalAlign: "top" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card>
+        <h3 style={{ margin: "0 0 14px", color: "#e2e8f0", fontSize: 13 }}>🧑‍🎓 Alunos com conta Google ({data.students.length})</h3>
+        {data.students.length === 0 ? (
+          <div style={{ color: "#475569", fontSize: 12, padding: "16px 0" }}>Nenhum aluno entrou com o Google ainda. Eles aparecem aqui no primeiro login.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead><tr style={{ borderBottom: "1px solid #1e293b" }}>
+                {["Aluno", "Matrícula", "Envios", "Média", "Labs", "Último acesso"].map((h) => <th key={h} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {data.students.map((st) => (
+                  <tr key={st.email} style={{ borderBottom: "1px solid #0a0f1a" }}>
+                    <td style={td}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <Avatar picture={st.picture} name={st.name} size={28} />
+                        <div>
+                          <div style={{ color: "#e2e8f0" }}>{st.name}</div>
+                          <div style={{ color: "#475569", fontSize: 10 }}>{st.email}</div>
+                          {st.linkedNames.map((n) => (
+                            <div key={n} style={{ color: "#a78bfa", fontSize: 10 }}>
+                              ↳ registros como "{n}"{" "}
+                              <button onClick={() => link(st.email, n, true)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 10, textDecoration: "underline", padding: 0 }}>desfazer</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ ...td, color: "#94a3b8" }}>{st.matriculas.join(", ") || "—"}</td>
+                    <td style={{ ...td, color: "#e2e8f0" }}>{st.submissions}</td>
+                    <td style={{ ...td, color: st.avg == null ? "#475569" : st.avg >= 60 ? "#4ade80" : "#f87171", fontWeight: 700 }}>{st.avg ?? "—"}</td>
+                    <td style={{ ...td, color: "#60a5fa" }}>{st.labs.join(", ") || "—"}</td>
+                    <td style={{ ...td, color: "#475569", whiteSpace: "nowrap" }}>{st.lastSeen ? new Date(st.lastSeen).toLocaleString("pt-BR") : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {data.conflicts.length > 0 && (
+        <Card>
+          <h3 style={{ margin: "0 0 10px", color: "#fbbf24", fontSize: 13 }}>⚠ Matrícula usada por mais de uma conta</h3>
+          <div style={{ color: "#94a3b8", fontSize: 11, marginBottom: 10 }}>Os registros antigos com essas matrículas não foram vinculados automaticamente — confira quem é quem.</div>
+          {data.conflicts.map((c) => (
+            <div key={c.matricula} style={{ color: "#e2e8f0", fontSize: 12, padding: "4px 0" }}>{c.matricula}: {c.emails.join(" · ")}</div>
+          ))}
+        </Card>
+      )}
+
+      <Card>
+        <h3 style={{ margin: "0 0 6px", color: "#e2e8f0", fontSize: 13 }}>🔗 Registros antigos sem vínculo ({data.unlinked.length})</h3>
+        <div style={{ color: "#475569", fontSize: 11, marginBottom: 14 }}>
+          Notas de antes do login Google. As que têm matrícula se ligam sozinhas quando o aluno entra com o Google e informa a mesma matrícula.
+          As demais você liga aqui — o histórico original não é alterado.
+        </div>
+        {data.unlinked.length === 0 ? (
+          <div style={{ color: "#475569", fontSize: 12, padding: "10px 0" }}>Nada pendente.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead><tr style={{ borderBottom: "1px solid #1e293b" }}>
+                {["Nome no registro", "Matrícula", "Envios", "Último envio", "Vincular a"].map((h) => <th key={h} style={th}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {data.unlinked.map((g) => (
+                  <tr key={g.key} style={{ borderBottom: "1px solid #0a0f1a" }}>
+                    <td style={{ ...td, color: "#e2e8f0" }}>{g.names.join(" / ")}</td>
+                    <td style={{ ...td, color: "#94a3b8" }}>{g.matriculas.join(", ") || "—"}</td>
+                    <td style={{ ...td, color: "#e2e8f0" }}>{g.count}</td>
+                    <td style={{ ...td, color: "#475569", whiteSpace: "nowrap" }}>{g.lastTs ? new Date(g.lastTs).toLocaleString("pt-BR") : "—"}</td>
+                    <td style={td}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        {g.suggestions.map((email) => (
+                          <button key={email} onClick={() => link(email, g.key)}
+                            style={{ display: "flex", gap: 6, alignItems: "center", background: "#0d1f3c", border: "1px solid #1e3a5f", color: "#60a5fa", padding: "3px 10px 3px 4px", borderRadius: 20, cursor: "pointer", fontSize: 11 }}>
+                            <Avatar picture={byEmail[email]?.picture} name={byEmail[email]?.name} size={18} /> {byEmail[email]?.name || email}
+                          </button>
+                        ))}
+                        {data.students.length > 0 && (
+                          <>
+                            <select value={manual[g.key] || ""} onChange={(e) => setManual((m) => ({ ...m, [g.key]: e.target.value }))}
+                              style={{ background: "#020817", border: "1px solid #1e293b", color: "#94a3b8", borderRadius: 6, padding: "3px 6px", fontSize: 11 }}>
+                              <option value="">outro aluno…</option>
+                              {data.students.map((st) => <option key={st.email} value={st.email}>{st.name} ({st.email})</option>)}
+                            </select>
+                            {manual[g.key] && (
+                              <button onClick={() => link(manual[g.key], g.key)}
+                                style={{ background: "#052e16", border: "1px solid #166534", color: "#4ade80", padding: "3px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>
+                                Vincular
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -663,7 +830,10 @@ function ExplanationsView() {
             {sorted.map((r, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #0a0f1a", verticalAlign: "top" }}>
                 <td style={{ padding: "7px 10px", color: "#94a3b8" }}>{r.matricula || "—"}</td>
-                <td style={{ padding: "7px 10px", color: "#e2e8f0" }}>{r.studentName}</td>
+                <td style={{ padding: "7px 10px", color: "#e2e8f0" }}>
+                    {r.studentName}
+                    {r.studentEmail && <div style={{ color: "#475569", fontSize: 10 }}>{r.studentEmail}</div>}
+                  </td>
                 <td style={{ padding: "7px 10px", color: "#60a5fa" }}>Lab {r.labId}</td>
                 <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>
                   {(r.items || []).map((it) => (

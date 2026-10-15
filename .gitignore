@@ -10,3 +10,4 @@ backend/.env
 *.pid
 /opt/bgp-labs/
 lab-sessions/
+idclienteoauthgoogle
