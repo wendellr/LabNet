@@ -457,8 +457,8 @@ ip route 150.4.4.0/24 Null0
     // Checks por captura (aba Wireshark) — casam contra o texto de cada pacote
     { id: "captured_open", label: "Capturou o OPEN de uma sessão BGP", router: "R4", capturePattern: "Open Message \\(1\\)[\\s\\S]*?my AS \\d, Holdtime 180s, ID \\d\\.\\d\\.\\d\\.\\d" },
     { id: "captured_notification", label: "Capturou a NOTIFICATION Cease do reset", router: "R4", capturePattern: "Notification Message \\(3\\)[^\\n]*Cease" },
-    { id: "captured_med_update", label: "Capturou o UPDATE de R4 com o MED configurado", router: "R4", capturePattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 4 1\\s" + UPD_NT + "Multi Exit Discriminator \\(4\\), length: 4, Flags \\[O\\]: {{medPreferred}}\\s" + UPD_NT + "Updated routes:\\s+150\\.1\\.1\\.0/24" },
-    { id: "captured_prepend_update", label: "Capturou o UPDATE de R1 com o AS-Path Prepend", router: "R4", capturePattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 1 {{prependArg}}\\s" + UPD_NT + "Updated routes:\\s+150\\.1\\.1\\.0/24" },
+    { id: "captured_med_update", label: "Capturou o UPDATE de R4 com o MED configurado", router: "R4", capturePattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 4 1\\s" + UPD_NT + "Multi Exit Discriminator \\(4\\), length: 4, Flags \\[O\\]: {{medPreferred}}\\s" + UPD_NT + "Updated routes:(?:\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+)*?\\s+150\\.1\\.1\\.0/24" },
+    { id: "captured_prepend_update", label: "Capturou o UPDATE de R1 com o AS-Path Prepend", router: "R4", capturePattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 1 {{prependArg}}\\s" + UPD_NT + "Updated routes:(?:\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+)*?\\s+150\\.1\\.1\\.0/24" },
   ],
 
   verifications: [
@@ -532,13 +532,13 @@ ip route 150.4.4.0/24 Null0
       id: "capture_med",
       label: "Capturou o UPDATE de R4 para R3 com Multi Exit Discriminator {{medPreferred}}",
       weight: 8,
-      check: { type: "capture", router: "R4", packetPattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 4 1\\s" + UPD_NT + "Multi Exit Discriminator \\(4\\), length: 4, Flags \\[O\\]: {{medPreferred}}\\s" + UPD_NT + "Updated routes:\\s+150\\.1\\.1\\.0/24" },
+      check: { type: "capture", router: "R4", packetPattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 4 1\\s" + UPD_NT + "Multi Exit Discriminator \\(4\\), length: 4, Flags \\[O\\]: {{medPreferred}}\\s" + UPD_NT + "Updated routes:(?:\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+)*?\\s+150\\.1\\.1\\.0/24" },
     },
     {
       id: "capture_prepend",
       label: "Capturou o UPDATE de R1 com o AS Path prependado ({{prependArg}})",
       weight: 6,
-      check: { type: "capture", router: "R4", packetPattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 1 {{prependArg}}\\s" + UPD_NT + "Updated routes:\\s+150\\.1\\.1\\.0/24" },
+      check: { type: "capture", router: "R4", packetPattern: "Update Message \\(2\\)" + UPD_NT + "Flags \\[TE\\]: 1 {{prependArg}}\\s" + UPD_NT + "Updated routes:(?:\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+)*?\\s+150\\.1\\.1\\.0/24" },
     },
     {
       id: "challenge_asymmetry",
