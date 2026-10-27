@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
+import { SlideTopology } from "./SlideTopology";
 
 // ─── TheorySlides ─────────────────────────────────────────────────────────
 // Apresentação da teoria de um lab (`lab.theorySlides`), usada na aba
 // "📖 Teoria" do aluno e na página pública ?teoria=<labId>.
 //
-// Cada slide: { title, subtitle?, points?, code?, diagram?, flow?, table?, note? }
+// Cada slide: { title, subtitle?, points?, code?, diagram?, topology?, flow?, table?, note? }
+// `topology` é um desenho SVG de topologia (ver SlideTopology.jsx).
 // Texto aceita `código` e **negrito** inline.
 
 export function Inline({ text }) {
@@ -39,6 +41,8 @@ function Slide({ slide, isCover }) {
       )}
 
       {slide.diagram && <pre style={{ ...pre, color: "#67e8f9" }}>{slide.diagram}</pre>}
+
+      {slide.topology && <SlideTopology {...slide.topology} />}
 
       {slide.points?.length > 0 && (
         <ul style={{ margin: 0, paddingLeft: 22, display: "flex", flexDirection: "column", gap: 10 }}>

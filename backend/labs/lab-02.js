@@ -25,6 +25,46 @@ const UPD_NT = "(?:(?!Update Message)[\\s\\S])*?";
 // Idem, e sem o atributo Local Preference no UPDATE (só aparece no iBGP)
 const NO_LP = "(?:(?!Update Message)(?!Local Preference)[\\s\\S])*?";
 
+// Diagrama de topologia dos slides (desenhado no frontend, ver SlideTopology.jsx).
+// variant: "base" (a rede), "decide" (cada um sai pelo seu vizinho), "lp" (Local Preference em R2).
+function TOPO_LAB2(variant) {
+  const nodes = [
+    { id: "R1", x: 120, y: 90, label: "R1", sub: "AS 1" },
+    { id: "R2", x: 480, y: 90, label: "R2", sub: "AS 1" },
+    { id: "R3", x: 120, y: 250, label: "R3", sub: "AS 3" },
+    { id: "R4", x: 480, y: 250, label: "R4", sub: "AS 2" },
+  ];
+  const groups = [{ label: "AS 1", x: 20, y: 28, w: 560, h: 124, color: "#60a5fa" }];
+  const badges = [
+    { x: 120, y: 300, text: "200.200.0.0/24", color: "#fbbf24" },
+    { x: 480, y: 300, text: "200.200.0.0/24", color: "#fbbf24" },
+  ];
+  let links;
+  if (variant === "decide") {
+    links = [
+      { a: "R1", b: "R2", kind: "dim", label: "iBGP (perde: eBGP vence)" },
+      { a: "R1", b: "R3", kind: "best", arrow: "a>b", label: "R1 sai por R3" },
+      { a: "R2", b: "R4", kind: "best", arrow: "a>b", label: "R2 sai por R4" },
+    ];
+    badges.push({ x: 300, y: 190, text: "mesmo AS, duas saídas diferentes", color: "#f87171" });
+  } else if (variant === "lp") {
+    links = [
+      { a: "R1", b: "R2", kind: "best", arrow: "b>a", label: "iBGP leva LocPrf 200" },
+      { a: "R2", b: "R4", kind: "best", arrow: "b>a", label: "LP 200 aplicado (in)" },
+      { a: "R1", b: "R3", kind: "dim", label: "eBGP: sem LP" },
+    ];
+    nodes[0].hl = true; nodes[1].hl = true;
+    badges.push({ x: 300, y: 190, text: "R1 e R2 saem por R4", color: "#4ade80" });
+  } else {
+    links = [
+      { a: "R1", b: "R2", kind: "ibgp", label: "iBGP" },
+      { a: "R1", b: "R3", kind: "ebgp", label: "eBGP" },
+      { a: "R2", b: "R4", kind: "ebgp", label: "eBGP" },
+    ];
+  }
+  return { w: 600, h: 330, groups, nodes, links, badges };
+}
+
 const lab = {
   id: 2,
   protocol: "bgp",
@@ -88,21 +128,7 @@ const lab = {
     },
     {
       title: "A topologia do Lab 2",
-      diagram: [
-        "              AS 1                          ",
-        "  ┌──────────────────────────────┐",
-        "  │ ┌────┐   iBGP    ┌────┐      │",
-        "  │ │ R1 ├─eth1───eth1┤ R2 │      │",
-        "  │ └─┬──┘ 10.0.0.1  └─┬──┘      │",
-        "  └───┼───  10.0.0.2 ──┼─────────┘",
-        "  eBGP│eth2          eth2│eBGP",
-        "  ┌───┴──┐          ┌────┴─┐",
-        "  │  R3  │          │  R4  │",
-        "  │ AS 3 │          │ AS 2 │",
-        "  └──────┘          └──────┘",
-        "  20.0.0.1          30.0.0.1",
-        "  └── ambos anunciam 200.200.0.0/24 ──┘",
-      ].join("\n"),
+      topology: TOPO_LAB2("base"),
       points: [
         "**R1** e **R2** formam o **AS 1** e são ligados por **iBGP**. R1 tem a saída pelo **AS 3** (R3); R2 tem a saída pelo **AS 2** (R4).",
         "O destino remoto **`200.200.0.0/24`** é anunciado por **R3 e R4**: o AS 1 tem **duas saídas** para ele.",
@@ -111,6 +137,7 @@ const lab = {
     },
     {
       title: "O problema: cada um decide sozinho",
+      topology: TOPO_LAB2("decide"),
       code: "R1# show ip bgp 200.200.0.0/24\n  3\n    20.0.0.1 from 20.0.0.1 (20.0.0.1)\n      Origin IGP, metric 0, valid, external, best (Peer Type)\n  2\n    10.0.0.2 from 10.0.0.2 (10.0.0.2)\n      Origin IGP, metric 0, localpref 100, valid, internal",
       points: [
         "R1 tem **dois caminhos**: o eBGP (via R3, AS-PATH `3`) e o iBGP (via R2, AS-PATH `2`). Empatam em Weight, Local Pref e AS-PATH.",
@@ -144,6 +171,7 @@ const lab = {
     },
     {
       title: "Como o consenso nasce",
+      topology: TOPO_LAB2("lp"),
       points: [
         "**1.** R2 aplica `set local-preference 200` nas rotas recebidas de R4 (vizinho `30.0.0.1`).",
         "**2.** R2 anuncia o caminho a R1 por **iBGP**, agora com **LocPrf 200**.",
