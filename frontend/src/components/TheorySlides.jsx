@@ -42,7 +42,7 @@ function Slide({ slide, isCover }) {
 
       {slide.diagram && <pre style={{ ...pre, color: "#67e8f9" }}>{slide.diagram}</pre>}
 
-      {slide.topology && <SlideTopology {...slide.topology} />}
+      {slide.topology && <SlideTopology key={slide.title} {...slide.topology} />}
 
       {slide.points?.length > 0 && (
         <ul style={{ margin: 0, paddingLeft: 22, display: "flex", flexDirection: "column", gap: 10 }}>

@@ -27,6 +27,107 @@ const UPD_NT = "(?:(?!Update Message)[\\s\\S])*?";
 // Lista de prefixos de 'Updated routes:' até o prefixo procurado
 const ROUTES_TO = (pfx) => "Updated routes:(?:\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+)*?\\s+" + pfx;
 
+// Diagramas dos slides (desenhados no frontend, ver SlideTopology.jsx). Variantes:
+// "base" (a rede), "origem" (as duas origens de 150.1.1.0/24), "caminho" (o AS-PATH a cada salto),
+// "weight" (Weight só em R2, depois em R3) e "origin" (ORIGIN rebaixado em R2 e R3).
+function TOPO3(variant) {
+  const nodes = [
+    { id: "R1", x: 95, y: 210, label: "R1", sub: "AS 254" },
+    { id: "R2", x: 470, y: 70, label: "R2", sub: "sub-AS 65502" },
+    { id: "R3", x: 470, y: 210, label: "R3", sub: "sub-AS 65503" },
+    { id: "R4", x: 470, y: 350, label: "R4", sub: "sub-AS 65504" },
+  ];
+  const groups = [
+    { label: "AS 254", x: 15, y: 140, w: 160, h: 140, color: "#fb923c" },
+    { label: "AS 5 (confederação)", x: 275, y: 10, w: 475, h: 400, color: "#60a5fa" },
+    { label: "", x: 330, y: 36, w: 260, h: 68, color: "#67e8f9" },
+    { label: "", x: 330, y: 176, w: 260, h: 68, color: "#67e8f9" },
+    { label: "", x: 330, y: 316, w: 260, h: 68, color: "#67e8f9" },
+  ];
+  const badges = [
+    { x: 675, y: 70, text: "150.2.2.0/24", color: "#fbbf24" },
+    { x: 675, y: 210, text: "150.3.3.0/24", color: "#fbbf24" },
+    { x: 675, y: 350, text: "150.1.1.0/24", color: "#fbbf24" },
+    { x: 95, y: 312, text: "150.1.1.0/24", color: "#fbbf24" },
+  ];
+  const links = [
+    { id: "R1-R2", a: "R1", b: "R2", kind: "ebgp", label: "eBGP" },
+    { id: "R1-R3", a: "R1", b: "R3", kind: "ebgp", label: "eBGP" },
+    { id: "R1-R4", a: "R1", b: "R4", kind: "ebgp", label: "eBGP" },
+    { id: "R2-R3", a: "R2", b: "R3", kind: "confed", label: "confed-eBGP" },
+    { id: "R3-R4", a: "R3", b: "R4", kind: "confed", label: "confed-eBGP" },
+  ];
+  const out = { w: 760, h: 420, groups, nodes, links, badges };
+  const YEL = "#fbbf24", GRN = "#4ade80", RED = "#f87171", CY = "#67e8f9";
+
+  if (variant === "origem") {
+    out.badges = [{ x: 675, y: 350, text: "150.1.1.0/24", color: GRN }, { x: 95, y: 312, text: "150.1.1.0/24", color: GRN },
+      { x: 675, y: 70, text: "150.2.2.0/24", color: "#475569" }, { x: 675, y: 210, text: "150.3.3.0/24", color: "#475569" }];
+    out.steps = [
+      { caption: "R1 e R4 anunciam o MESMO prefixo, 150.1.1.0/24. Vamos ver o que R2 e R3 recebem.", hl: ["R1", "R4"],
+        packets: [{ link: "R1-R2", dir: "a>b", label: "254", color: YEL }, { link: "R3-R4", dir: "b>a", label: "( 65504 )", color: CY }] },
+      { caption: "R2 recebe DUAS opções: a direta de R1, com AS-PATH 254 (comprimento 1), e a da confederação, com ( 65503 65504 ) — um segmento entre parênteses.", hl: ["R2"],
+        packets: [{ link: "R1-R2", dir: "a>b", label: "254 · comp. 1", color: YEL }, { link: "R2-R3", dir: "b>a", label: "( 65503 65504 ) · comp. 0", color: CY }] },
+      { caption: "O segmento de confederação NÃO conta no comprimento: 0 < 1. R2 escolhe a rota pela confederação — best (AS Path). O caminho direto de R1 perde.", hl: ["R2"],
+        links: { "R1-R2": { kind: "dim", label: "perde", arrow: undefined }, "R2-R3": { kind: "best", arrow: "b>a", label: "R2 usa R3" } } },
+      { caption: "R3 faz a mesma conta: a direta de R1 (254) contra a de R4, ( 65504 ), de comprimento 0.", hl: ["R3"],
+        packets: [{ link: "R1-R3", dir: "a>b", label: "254 · comp. 1", color: YEL }, { link: "R3-R4", dir: "b>a", label: "( 65504 ) · comp. 0", color: CY }],
+        links: { "R1-R2": { kind: "dim", label: "perde" }, "R2-R3": { kind: "best", arrow: "b>a", label: "R2 usa R3" } } },
+      { caption: "Resultado: R2 usa R3 e R3 usa R4. As rotas diretas de R1 foram ignoradas — por isso o Weight será necessário no passo 2.", hl: ["R2", "R3"],
+        links: { "R1-R2": { kind: "dim", label: "perde" }, "R1-R3": { kind: "dim", label: "perde" }, "R2-R3": { kind: "best", arrow: "b>a", label: "R2 usa R3" }, "R3-R4": { kind: "best", arrow: "b>a", label: "R3 usa R4" } } },
+    ];
+  } else if (variant === "caminho") {
+    out.badges = [{ x: 675, y: 210, text: "150.3.3.0/24", color: GRN }, { x: 675, y: 70, text: "150.2.2.0/24", color: "#475569" },
+      { x: 675, y: 350, text: "150.1.1.0/24", color: "#475569" }, { x: 95, y: 312, text: "150.1.1.0/24", color: "#475569" }];
+    out.steps = [
+      { caption: "R3 origina 150.3.3.0/24 e o anuncia a R2 DENTRO da confederação: o sub-AS entra entre parênteses.", hl: ["R3"],
+        packets: [{ link: "R2-R3", dir: "b>a", label: "AS-PATH ( 65503 )", color: CY }] },
+      { caption: "R2 anuncia a R1, FORA da confederação: os parênteses somem e entra o AS 5. R1 só vê '5'.", hl: ["R2"],
+        packets: [{ link: "R1-R2", dir: "b>a", label: "AS-PATH 5", color: YEL }],
+        links: { "R2-R3": { kind: "best", arrow: "b>a" } } },
+      { caption: "R3 também anuncia direto a R1: de novo, AS-PATH 5.", hl: ["R3"],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "AS-PATH 5", color: YEL }],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "5" } } },
+      { caption: "E R4, que aprendeu de R3 dentro da confederação, anuncia a R1: AS-PATH 5. Os TRÊS caminhos de R1 são idênticos no AS-PATH — o ORIGIN vai desempatar no passo 3.", hl: ["R1"],
+        packets: [{ link: "R1-R4", dir: "b>a", label: "AS-PATH 5", color: YEL }, { link: "R3-R4", dir: "a>b", label: "( 65503 )", color: CY }],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "5" }, "R1-R3": { kind: "best", arrow: "b>a", label: "5" } } },
+    ];
+  } else if (variant === "weight") {
+    out.badges = [{ x: 675, y: 350, text: "150.1.1.0/24", color: GRN }, { x: 95, y: 312, text: "150.1.1.0/24", color: GRN },
+      { x: 675, y: 70, text: "150.2.2.0/24", color: "#475569" }, { x: 675, y: 210, text: "150.3.3.0/24", color: "#475569" }];
+    out.links = links.map((l) => ({ ...l }));
+    out.steps = [
+      { caption: "Ponto de partida: R2 usa R3 e R3 usa R4 para 150.1.1.0/24 (AS-PATH de confederação, comprimento 0).",
+        links: { "R1-R2": { kind: "dim" }, "R1-R3": { kind: "dim" }, "R2-R3": { kind: "best", arrow: "b>a", label: "R2 usa R3" }, "R3-R4": { kind: "best", arrow: "b>a", label: "R3 usa R4" } } },
+      { caption: "Você configura SÓ o R2: weight 800 nas rotas que chegam de R1 (route-map in). R2 passa a usar a rota direta de R1 — best (Weight).", hl: ["R2"],
+        badges: [{ x: 190, y: 66, text: "R2: weight 800 (local)", color: YEL }],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "R2 usa R1", flow: "b>a" }, "R2-R3": { kind: "dim" }, "R3-R4": { kind: "best", arrow: "b>a", label: "R3 usa R4" } } },
+      { caption: "Mas o Weight NÃO sai de R2. R3 não é avisado: continua usando R4. O AS ficou dividido.", hl: ["R2"],
+        badges: [{ x: 190, y: 66, text: "R2: weight 800 (local)", color: YEL }],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "R2 usa R1" }, "R2-R3": { kind: "blocked", label: "weight não é anunciado" }, "R3-R4": { kind: "best", arrow: "b>a", label: "R3 usa R4", flow: "b>a" } } },
+      { caption: "Para R3 também preferir R1, configure o weight em R3. Cada roteador decide por si.", hl: ["R2", "R3"],
+        badges: [{ x: 190, y: 66, text: "R2: weight 800", color: YEL }, { x: 380, y: 246, text: "R3: weight 800", color: YEL }],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "R2 usa R1" }, "R1-R3": { kind: "best", arrow: "b>a", label: "R3 usa R1", flow: "b>a" }, "R2-R3": { kind: "dim" }, "R3-R4": { kind: "dim" } } },
+    ];
+  } else if (variant === "origin") {
+    out.badges = [{ x: 675, y: 210, text: "150.3.3.0/24", color: GRN }, { x: 675, y: 70, text: "150.2.2.0/24", color: "#475569" },
+      { x: 675, y: 350, text: "150.1.1.0/24", color: "#475569" }, { x: 95, y: 312, text: "150.1.1.0/24", color: "#475569" }];
+    out.steps = [
+      { caption: "Antes: R1 tem TRÊS caminhos iguais para 150.3.3.0/24 — AS-PATH 5, Origin IGP (i) nos três. O FRR usa os três (multipath) e escolhe o best pelo Router ID: R2.", hl: ["R1"],
+        packets: [{ link: "R1-R2", dir: "b>a", label: "5 · i", color: GRN }, { link: "R1-R3", dir: "b>a", label: "5 · i", color: GRN }, { link: "R1-R4", dir: "b>a", label: "5 · i", color: GRN }],
+        links: { "R1-R2": { kind: "best", label: "best (Router ID)" }, "R1-R3": { kind: "best", label: "multipath" }, "R1-R4": { kind: "best", label: "multipath" } } },
+      { caption: "Você rebaixa o Origin nos anúncios de saída: R2 anuncia incomplete (?), R3 anuncia EGP (e). R4 não é tocado e continua IGP (i).", hl: ["R2", "R3"],
+        badges: [{ x: 190, y: 66, text: "R2: set origin incomplete", color: RED }, { x: 380, y: 246, text: "R3: set origin egp", color: YEL }],
+        packets: [{ link: "R1-R2", dir: "b>a", label: "5 · ?", color: RED }, { link: "R1-R3", dir: "b>a", label: "5 · e", color: YEL }, { link: "R1-R4", dir: "b>a", label: "5 · i", color: GRN }],
+        links: { "R1-R2": { kind: "dim", label: "incomplete" }, "R1-R3": { kind: "dim", label: "EGP" }, "R1-R4": { kind: "best", label: "IGP" } } },
+      { caption: "R1 prefere o ÚNICO caminho IGP: R4. O BGP decide pelo Origin — best (Origin) — ANTES do Router ID, e o multipath se desfaz.", hl: ["R1", "R4"],
+        badges: [{ x: 190, y: 66, text: "R2: set origin incomplete", color: RED }, { x: 380, y: 246, text: "R3: set origin egp", color: YEL }],
+        links: { "R1-R2": { kind: "dim", label: "incomplete" }, "R1-R3": { kind: "dim", label: "EGP" }, "R1-R4": { kind: "best", arrow: "b>a", label: "best (Origin)", flow: "b>a" } } },
+    ];
+  }
+  return out;
+}
+
 module.exports = {
   id: 3,
   protocol: "bgp",
@@ -56,14 +157,26 @@ module.exports = {
     {
       title: "BGP — Weight, ORIGIN e Confederação",
       subtitle: "Tudo o que você precisa saber para fazer o Lab 3",
+      topology: TOPO3("base"),
       points: [
-        "**Confederação**: dividir um AS grande em sub-ASes — e o que o mundo de fora enxerga",
-        "Por que **R2 e R3 não escolhem** o caminho direto de R1 (e o que o AS-PATH de confederação esconde)",
+        "**Confederação**: um AS grande dividido em sub-ASes — e o que o mundo de fora enxerga",
+        "Por que **R2 e R3 não escolhem** o caminho direto de R1",
         "**Weight**: poder **local** e o critério número 1",
         "**ORIGIN**: IGP, EGP e incomplete — e quando ele desempata",
         "Tudo isso **no fio**: os UPDATEs mostram a confederação e o Origin",
       ],
-      note: "Este lab parte dos Labs 1 e 2: AS-PATH, a ordem de decisão e Local Preference × Weight.",
+      note: "Este lab parte dos Labs 1 e 2: AS-PATH, a ordem de decisão e Local Preference × Weight. Nos diagramas com botões, use **Passo →** ou **▶ Reproduzir**.",
+    },
+    {
+      title: "Duas perguntas para guiar o lab",
+      points: [
+        "**1.** Por que R2 e R3 **ignoram** a rota direta de R1 e vão pela confederação? E como **fazê-los** usar R1?",
+        "**2.** Como fazer R1 **preferir um** entre três caminhos que parecem **idênticos**?",
+        "A **pergunta 1** se resolve com **Weight** (passo 2). A **pergunta 2**, com **ORIGIN** (passo 3).",
+        "Entre as duas, vem a **confederação** (passo 1): é ela que explica o comportamento surpreendente da pergunta 1.",
+      ],
+      flow: ["Passo 1: ler a confederação", "Passo 2: Weight", "Passo 3: ORIGIN"],
+      note: "Dica de estudo: antes de cada passo do roteiro há uma **previsão**. Tente responder olhando só para o diagrama — errar faz parte.",
     },
     {
       title: "Confederação: o problema que ela resolve",
@@ -73,30 +186,40 @@ module.exports = {
         "Os sub-ASes usam **ASNs privados** (aqui 65502, 65503, 65504). Para o mundo de fora, **todos** são o **AS 5** (o `bgp confederation identifier`).",
         "(O **Lab 4** é só sobre isso — aqui a confederação é o cenário em que o Weight e o ORIGIN vão agir.)",
       ],
+      table: {
+        head: ["Roteadores", "Sessões em malha completa"],
+        rows: [["5", "**10**"], ["10", "**45**"], ["50", "**1225**"]],
+      },
     },
     {
       title: "A topologia do Lab 3",
-      diagram: [
-        "                    AS 254",
-        "                   ┌────┐",
-        "         ┌─────────┤ R1 ├─────────┐",
-        "         │eth1     └─┬──┘eth2     │",
-        "         │       eth3│            │",
-        "   ┌─────┴┐          │150.1.1.0/24│",
-        "   │  R2  │          │            │",
-        "   │65502 │       ┌──┴─┐       ┌──┴───┐",
-        "   └──┬───┘       │ R4 │       │  R3  │",
-        "      │eth2       │65504│      │ 65503│",
-        "      └───────────┤    ├───────┤      │",
-        "     (confed)     └────┘ eth1   └──────┘",
-        "          AS 5 = R2 + R3 + R4  (confederação)",
-      ].join("\n"),
+      topology: TOPO3("base"),
       points: [
         "**R1** (AS 254) fica **fora** e fala com **R2**, **R3** e **R4**. Para ele, os três são o **AS 5**.",
-        "**R2, R3 e R4** formam o **AS 5**: sub-ASes **65502**, **65503**, **65504**, com sessões confed-eBGP entre eles.",
-        "**R1 e R4 anunciam o mesmo prefixo**: `150.1.1.0/24` (R4 tem uma interface nessa rede). Isso cria a dúvida do passo 1.",
+        "**R2, R3 e R4** formam o **AS 5**: sub-ASes **65502**, **65503**, **65504**, com sessões **confed-eBGP** (laranja tracejado) entre eles.",
+        "**R1 e R4 anunciam o mesmo prefixo**: `150.1.1.0/24` (R4 tem uma interface nessa rede). Essa é a origem da dúvida do passo 1.",
         "Cada um anuncia um prefixo próprio: R2 `150.2.2.0/24`, R3 `150.3.3.0/24`.",
       ],
+    },
+    {
+      title: "Quem vence? A ordem de decisão",
+      flow: ["1 Weight (maior)", "2 Local Pref (maior)", "3 Rota local", "4 AS-PATH (mais curto)", "5 ORIGIN (i < e < ?)", "6 MED (menor)", "7 eBGP > iBGP", "8 Métrica IGP", "9 Router ID"],
+      points: [
+        "O BGP percorre a lista **de cima para baixo** e **para no primeiro critério que desempata**.",
+        "Hoje usamos três: **AS-PATH (4)** — explica o comportamento surpreendente; **Weight (1)** — o que **vence** tudo; e **ORIGIN (5)** — o que desempata quando **nada mais** diferencia.",
+        "O FRR escreve o critério que decidiu: `best (AS Path)`, `best (Weight)`, `best (Origin)`, `best (Router ID)`.",
+      ],
+      note: "Leitura rápida: quanto **mais para a esquerda**, **mais poder**. Weight vence o AS-PATH; o AS-PATH vence o ORIGIN.",
+    },
+    {
+      title: "Passo 1 · Por que R2 e R3 ignoram o caminho direto?",
+      topology: TOPO3("origem"),
+      points: [
+        "O prefixo `150.1.1.0/24` existe em **dois lugares**: em **R1** e em **R4**. R2 e R3 têm **duas opções** cada.",
+        "O caminho direto de R1 tem AS-PATH `254` — **comprimento 1**. O caminho pela confederação tem um **segmento entre parênteses**, e ele **não conta** — comprimento **0**.",
+        "**0 < 1**: o BGP prefere a rota pela confederação — `best (AS Path)`. R2 usa R3; R3 usa R4.",
+      ],
+      note: "Validado neste lab: sem política, R2 escolhe a rota de R3 e R3 escolhe a de R4 para 150.1.1.0/24.",
     },
     {
       title: "O AS-PATH de confederação",
@@ -104,40 +227,40 @@ module.exports = {
       points: [
         "O caminho interno aparece **entre parênteses**: `(65503 65504)` é um **segmento de confederação**. Ele registra os sub-ASes pelos quais a rota passou.",
         "Esse segmento **não conta no comprimento** do AS-PATH: `(65503 65504)` tem comprimento **0**; o caminho direto de R1, `254`, tem comprimento **1**.",
-        "Por isso o BGP prefere o caminho pela confederação — `best (AS Path)` — **mesmo sendo mais longo** na prática.",
         "**Ao sair do AS 5**, o segmento é **removido** e o AS 5 é acrescentado: R1 vê `5`, nunca os sub-ASes.",
       ],
-      note: "Validado neste lab: sem política, R2 escolhe a rota de R3 e R3 escolhe a de R4 para 150.1.1.0/24.",
     },
     {
-      title: "A confederação no fio",
+      title: "A confederação no fio: o AS-PATH muda a cada salto",
+      topology: TOPO3("caminho"),
+      points: [
+        "Dentro da confederação, cada **sub-AS** é acrescentado **entre parênteses**: `( 65503 )`.",
+        "Ao **sair** para R1, os parênteses somem e entra o **AS 5**: **R1 só vê `5`**.",
+        "Resultado: os **três** caminhos de R1 para `150.3.3.0/24` têm o **mesmo AS-PATH** (`5`) — o assunto do passo 3.",
+      ],
       code: "(R3 → R2, dentro da confederação)\n\t  AS Path (2), length: 6, Flags [TE]: ( 65503 )\n\t  Updated routes:\n\t    150.3.3.0/24\n\n(R2 → R1, para fora)\n\t  AS Path (2), length: 6, Flags [TE]: 5\n\t  Updated routes:\n\t    150.3.3.0/24",
-      points: [
-        "O **mesmo prefixo**, dois UPDATEs: **( 65503 )** entre sub-ASes e **5** para R1.",
-        "Os parênteses no `tcpdump` marcam o **segmento de confederação**.",
-        "É a prova de que a divisão em sub-ASes **não vaza** para fora.",
-      ],
-      note: "Saída real do tcpdump em R2.",
+      note: "Saída real do tcpdump em R2. Os parênteses no `tcpdump` marcam o segmento de confederação.",
     },
     {
-      title: "Weight — local e o critério número 1",
+      title: "Passo 2 · Weight: poder local",
+      topology: TOPO3("weight"),
       points: [
-        "**Weight** é um valor **por roteador**: **maior vence**. **Nunca é anunciado** a nenhum vizinho — nem confed-eBGP, nem iBGP.",
-        "Fica no critério **1** da decisão: **antes** do Local Preference e do AS-PATH.",
-        "Rotas **originadas** pelo roteador ganham **32768** automaticamente (por isso `best (Weight)` aparece em rotas locais).",
-        "Configura-se com **route-map** (`set weight N`) aplicada **in** ao vizinho: o roteador marca o que **recebe**.",
-        "Consequência: **cada roteador** que deve mudar precisa ser configurado — o Weight de R2 **não ajuda** R3.",
+        "**Weight** é um valor **por roteador**: **maior vence**. Fica no critério **1** — **antes** do AS-PATH.",
+        "Configurar o Weight em **R2** muda **só a decisão de R2**. **Nunca é anunciado** — nem por confed-eBGP, nem por iBGP.",
+        "**R3** não fica sabendo: continua usando R4. Para mudar R3, é preciso configurá-lo **também**.",
       ],
-      code: "ip prefix-list NET_R1 seq 10 permit 150.1.1.0/24\n!\nroute-map WEIGHT_R1 permit 10\n match ip address prefix-list NET_R1\n set weight 800\nroute-map WEIGHT_R1 permit 20\n!\nrouter bgp 65502\n address-family ipv4 unicast\n  neighbor 10.0.0.1 route-map WEIGHT_R1 in",
+      note: "Regra prática: se **todo o AS** precisa concordar, use **Local Preference** (Lab 2). Weight é para um ajuste **local**.",
     },
     {
       title: "prefix-list + route-map: limitando a política",
+      flow: ["Rota recebida de R1", "prefix-list casa 150.1.1.0/24?", "cláusula 10: set weight", "cláusula 20: passa sem alterar"],
       points: [
         "Sem `match`, a route-map vale para **todos** os prefixos do vizinho. Para afetar **só um**, usa-se uma **prefix-list** no `match ip address prefix-list`.",
         "A cláusula **10** casa o prefixo e aplica o `set`. A cláusula **20** (sem `match`) deixa **passar tudo o mais**, sem alterar.",
         "Se a cláusula 20 **não existisse**, as demais rotas seriam **descartadas** pelo *deny implícito* do final da route-map.",
         "Resultado: o Weight vale **só** para `150.1.1.0/24`; as outras rotas de R1 seguem como estão.",
       ],
+      code: "ip prefix-list NET_R1 seq 10 permit 150.1.1.0/24\n!\nroute-map WEIGHT_R1 permit 10\n match ip address prefix-list NET_R1\n set weight 800\nroute-map WEIGHT_R1 permit 20\n!\nrouter bgp 65502\n address-family ipv4 unicast\n  neighbor 10.0.0.1 route-map WEIGHT_R1 in",
     },
     {
       title: "ORIGIN — como a rota entrou no BGP",
@@ -149,6 +272,7 @@ module.exports = {
           ["**Incomplete**", "`?`", "`redistribute` (a origem é desconhecida)", "**Pior**"],
         ],
       },
+      flow: ["i  IGP", "e  EGP", "?  incomplete"],
       points: [
         "Está no critério **5**: depois de Weight, LP, AS-PATH — e **antes** do MED.",
         "Só desempata quando os critérios anteriores **empataram**. Aqui, todos os caminhos de R1 para `150.3.3.0/24` têm AS-PATH `5`.",
@@ -156,23 +280,15 @@ module.exports = {
       ],
     },
     {
-      title: "O ponto de partida de R1",
-      code: "R1# show ip bgp\n *>  150.3.3.0/24     10.0.0.2                               0 5 i\n *=                  10.0.0.6                 0             0 5 i\n *=                  150.1.1.4                              0 5 i\n\nR1# show ip bgp 150.3.3.0/24\n  5\n    10.0.0.2 from 10.0.0.2 (2.2.2.2)\n      Origin IGP, valid, external, multipath, best (Router ID)",
+      title: "Passo 3 · Mudar o caminho de R1 sem tocar em R1",
+      topology: TOPO3("origin"),
       points: [
-        "R1 aprende `150.3.3.0/24` por **três caminhos iguais** (R2, R3 e R4), todos com AS-PATH `5`. O FRR usa os três (**multipath**, o `=` na tabela).",
-        "O `best` é desempatado por **Router ID** — o menor, **R2**.",
-        "Se você manipular o **ORIGIN** dos caminhos, o BGP volta a decidir **antes** do Router ID — e o multipath se desfaz.",
-      ],
-      note: "Validado neste lab, sem nenhuma política configurada.",
-    },
-    {
-      title: "Alterar o que R1 recebe: route-map out",
-      points: [
-        "**Weight** altera como **eu** vejo uma rota (route-map **in**). O **ORIGIN** quer mudar como **R1** vê as rotas — então a política vai **na saída dos vizinhos** (route-map **out**).",
-        "Cada vizinho de R1 reescreve o Origin do **seu** anúncio: o que R2 mandar a R1 não depende do que R3 mandar.",
-        "O desafio: escolher **quem recebe qual Origin** para R1 acabar preferindo **só um** caminho — o que ficar **IGP**, o único que não for rebaixado.",
+        "R1 aprende `150.3.3.0/24` por **três caminhos iguais** (R2, R3 e R4, todos com AS-PATH `5`). O FRR usa os três (**multipath**) e o `best` sai por **Router ID** — o menor, **R2**.",
+        "Quem muda o Origin é **cada vizinho**, na **saída** (route-map **out**): **R2** manda `incomplete`, **R3** manda `EGP`, e **R4 não é tocado**.",
+        "Sobra **um só IGP**: **R4**. O BGP decide **antes** do Router ID — `best (Origin)` — e o multipath se desfaz.",
       ],
       code: "route-map ORIGIN_R1 permit 10\n match ip address prefix-list NET_R3\n set origin incomplete\nroute-map ORIGIN_R1 permit 20\n!\nrouter bgp 65502\n address-family ipv4 unicast\n  neighbor 10.0.0.1 route-map ORIGIN_R1 out",
+      note: "Validado neste lab: depois da política, R1 mudou de R2 para R4 e o multipath sumiu.",
     },
     {
       title: "O ORIGIN no fio",
@@ -185,12 +301,27 @@ module.exports = {
       note: "Saída real do tcpdump em R1 depois da política.",
     },
     {
+      title: "Resumo: o que cada ferramenta faz",
+      table: {
+        head: ["Ferramenta", "Onde configurar", "Quem enxerga", "Para quê"],
+        rows: [
+          ["**Weight**", "route-map **in**", "**Só** o roteador local", "Preferir uma entrada **neste** roteador"],
+          ["**ORIGIN**", "route-map **out** (no vizinho que anuncia)", "**Quem recebe** (e adiante)", "Rebaixar um caminho para **desempatar**"],
+          ["**AS-PATH de confederação**", "Automático", "Dentro do AS 5; **some** na saída", "Evitar laços entre sub-ASes"],
+        ],
+      },
+      points: [
+        "Se o resultado **não mudou**, olhe **o que diz depois de `best`**: ele mostra **qual critério decidiu**.",
+        "Se mudou em **um** roteador e **não** em outro: provavelmente é **Weight** (local).",
+      ],
+    },
+    {
       title: "Roteiro do Lab 3",
+      flow: ["Passo 1: confederação e capturas", "Passo 2: Weight em R2 e R3", "Passo 3: ORIGIN em R2 e R3", "Desafio: perguntas"],
       points: [
         "**Passo 1:** reconhecer a **confederação**, ver o **AS-PATH com parênteses** e **capturar** o UPDATE interno × externo em R2.",
         "**Passo 2:** **Weight** em R2 e R3 para preferirem o caminho direto de R1 — primeiro **só em R2**, para ver que R3 não muda.",
         "**Passo 3:** **ORIGIN** nos anúncios de R2 e R3 para R1: R1 muda para um caminho **que não era o preferido**. Com **captura** em R1.",
-        "**Desafio:** perguntas de fechamento.",
         "Nos passos 1, 2 e 3 há uma **previsão** antes de rodar.",
       ],
       note: "A nota confere nas SUAS capturas o UPDATE com segmento de confederação, o UPDATE para fora com AS 5 e os UPDATEs com Origin Incomplete e EGP.",
