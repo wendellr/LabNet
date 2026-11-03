@@ -30,6 +30,115 @@ const ROUTES_TO = (pfx) => "Updated routes:(?:\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+
 const OUT_TTL = (ttl) => "Out\\s+IP \\(tos 0xc0, ttl " + ttl + ",[^\\n]*\\n\\s*14\\.14\\.14\\.1\\.\\d+ > 10\\.0\\.34\\.1\\.\\d+:";
 const SYN_TTL = (ttl) => "ttl " + ttl + ",[^\\n]*\\n\\s*14\\.14\\.14\\.1\\.\\d+ > 10\\.0\\.34\\.1\\.179: Flags \\[S\\],";
 
+// Diagramas dos slides (desenhados no frontend, ver SlideTopology.jsx). Variantes: "tour" (a rede, roteador a
+// roteador), "visao" (primário × backup), "ttl" (o SYN com e sem multihop), "weight" (10.3.3.0/24),
+// "default" (a default e o prepend) e "failover" (derrubar o primário). Nos slides públicos não há variáveis:
+// os valores aparecem como N / "prepend".
+function TOPO8(variant) {
+  const YEL = "#fbbf24", GRN = "#4ade80", RED = "#f87171", CY = "#67e8f9", GRY = "#94a3b8";
+  const nodes = [
+    { id: "R1", x: 110, y: 215, label: "R1", sub: "AS 1" },
+    { id: "R2", x: 390, y: 65, label: "R2", sub: "AS 2" },
+    { id: "R3", x: 670, y: 215, label: "R3", sub: "AS 3" },
+    { id: "R4", x: 390, y: 365, label: "R4", sub: "sem BGP" },
+  ];
+  const groups = [
+    { label: "", x: 30, y: 150, w: 160, h: 130, color: "#fb923c" },
+    { label: "", x: 310, y: 10, w: 160, h: 110, color: "#60a5fa" },
+    { label: "", x: 590, y: 150, w: 160, h: 130, color: "#a78bfa" },
+    { label: "", x: 290, y: 300, w: 200, h: 120, color: GRY },
+  ];
+  const links = [
+    { id: "R1-R2", a: "R1", b: "R2", kind: "ebgp", label: "eBGP" },
+    { id: "R2-R3", a: "R2", b: "R3", kind: "ebgp", label: "eBGP" },
+    { id: "R1-R4", a: "R1", b: "R4", kind: "dim", label: "14.14.14.0/24" },
+    { id: "R4-R3", a: "R4", b: "R3", kind: "dim", label: "10.0.34.0/30" },
+    { id: "R1-R3", a: "R1", b: "R3", kind: "dim", label: "sessão R1–R3 (via R4)" },
+  ];
+  const out = { w: 780, h: 430, groups, nodes, links, badges: [{ x: 390, y: 408, text: "trânsito IP: só encaminha", color: GRY }] };
+  const prim = { "R1-R2": { kind: "best", arrow: "a>b", label: "primário" }, "R2-R3": { kind: "best", arrow: "a>b", label: "primário" } };
+
+  if (variant === "tour") {
+    out.steps = [
+      { caption: "R1 (AS 1) é a borda de origem: ele tem a rede 14.14.14.0/24 e fala eBGP com R2.", hl: ["R1"] },
+      { caption: "R2 (AS 2) é o caminho PRIMÁRIO: fica entre R1 e R3, com sessões eBGP diretas nos dois lados.", hl: ["R2"], links: { "R1-R2": { kind: "best" }, "R2-R3": { kind: "best" } } },
+      { caption: "R3 (AS 3) é o destino: origina 10.3.3.0/24 e quer chegar a R1 mesmo se R2 cair.", hl: ["R3"] },
+      { caption: "R4 NÃO fala BGP: só encaminha IP entre R1 e R3. É o enlace de BACKUP — e o obstáculo do eBGP multihop.", hl: ["R4"], links: { "R1-R4": { kind: "ospf" }, "R4-R3": { kind: "ospf" } } },
+    ];
+  } else if (variant === "visao") {
+    out.steps = [
+      { caption: "Caminho PRIMÁRIO: R1 → R2 → R3, duas sessões eBGP diretas. O tráfego vai por aqui.", links: { ...prim, "R1-R3": { kind: "dim", label: "" } } },
+      { caption: "Caminho de BACKUP: R1 e R3 abrem uma sessão eBGP 'por cima' de R4, que só repassa os pacotes IP.", hl: ["R4"],
+        links: { ...prim, "R1-R4": { kind: "ospf", arrow: "a>b", flow: "a>b" }, "R4-R3": { kind: "ospf", arrow: "a>b", flow: "a>b" }, "R1-R3": { kind: "ebgp", label: "eBGP multihop" } } },
+      { caption: "Se o primário cair, o BGP troca de caminho sozinho — e o backup assume. Vamos construir cada peça e TESTAR isso no passo 5.", hl: ["R3"],
+        links: { "R1-R2": { kind: "blocked", label: "caiu" }, "R2-R3": { kind: "dim" }, "R1-R3": { kind: "best", arrow: "b>a", label: "backup assume", flow: "b>a" }, "R1-R4": { kind: "ospf" }, "R4-R3": { kind: "ospf" } } },
+    ];
+  } else if (variant === "ttl") {
+    out.steps = [
+      { caption: "R1 quer abrir o TCP com R3 (porta 179). O primeiro pacote é o SYN, e o eBGP o envia com TTL 1 — 'uma vida só'.", hl: ["R1"],
+        packets: [{ link: "R1-R4", dir: "a>b", label: "SYN · ttl 1", color: YEL }], links: { "R1-R3": { kind: "dim", label: "" } } },
+      { caption: "R4 está no meio: decrementa o TTL (1 → 0) e DESCARTA o pacote. O SYN nunca chega a R3, a sessão fica em Active.", hl: ["R4"],
+        badges: [{ x: 560, y: 365, text: "ttl 1→0: descartado", color: RED }], links: { "R1-R4": { kind: "ospf", arrow: "a>b" }, "R4-R3": { kind: "blocked", label: "nada chega" }, "R1-R3": { kind: "dim", label: "" } } },
+      { caption: "Com ebgp-multihop N, o SYN sai com TTL N (aqui, 4): 'várias vidas'. R4 decrementa (4 → 3) e ENCAMINHA.", hl: ["R1", "R4"],
+        badges: [{ x: 160, y: 365, text: "ebgp-multihop N", color: YEL }],
+        packets: [{ link: "R1-R4", dir: "a>b", label: "SYN · ttl 4", color: YEL }, { link: "R4-R3", dir: "a>b", label: "ttl 3", color: YEL }], links: { "R1-R3": { kind: "dim", label: "" } } },
+      { caption: "R3 recebe e responde com SYN-ACK. O TCP fecha e o BGP segue: OPEN, KEEPALIVE → sessão Established.", hl: ["R3"],
+        packets: [{ link: "R4-R3", dir: "b>a", label: "SYN-ACK", color: GRN }, { link: "R1-R4", dir: "b>a", label: "SYN-ACK", color: GRN }],
+        links: { "R1-R3": { kind: "ebgp", label: "Established" }, "R1-R4": { kind: "ospf" }, "R4-R3": { kind: "ospf" } } },
+    ];
+  } else if (variant === "weight") {
+    out.badges.push({ x: 670, y: 275, text: "10.3.3.0/24", color: YEL });
+    out.links = links.map((l) => (l.id === "R1-R3" ? { ...l, kind: "ebgp", label: "eBGP multihop" } : l));
+    out.steps = [
+      { caption: "R3 origina 10.3.3.0/24. R1 recebe a rota por DOIS caminhos: direto (AS-PATH 3) e por R2 (AS-PATH 2 3).", hl: ["R1"],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "AS-PATH 3", color: YEL }, { link: "R1-R2", dir: "b>a", label: "AS-PATH 2 3", color: CY }] },
+      { caption: "Sem Weight, vence o AS-PATH mais curto: 3 (comprimento 1) contra 2 3 (comprimento 2). O caminho direto — o de BACKUP — vira o primário!", hl: ["R1"],
+        links: { "R1-R3": { kind: "best", arrow: "b>a", label: "best (AS Path)" }, "R1-R2": { kind: "dim", label: "perde" } },
+        badges: [{ x: 110, y: 130, text: "backup virou primário ✗", color: RED }] },
+      { caption: "Você configura em R1: neighbor 10.0.12.2 weight N. Tudo que R1 recebe de R2 ganha peso N.", hl: ["R1"],
+        badges: [{ x: 110, y: 130, text: "R1: weight N p/ vizinho R2", color: YEL }],
+        links: { "R1-R3": { kind: "ebgp", label: "eBGP multihop" }, "R1-R2": { kind: "ebgp", label: "weight N", flow: "b>a", arrow: "b>a" } } },
+      { caption: "Weight é o critério 1, antes do AS-PATH: R1 passa a usar R2 — best (Weight). O primário voltou ao lugar.", hl: ["R1", "R2"],
+        badges: [{ x: 110, y: 130, text: "R1: weight N p/ vizinho R2", color: YEL }],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "best (Weight)", flow: "b>a" }, "R1-R3": { kind: "dim", label: "reserva" } } },
+    ];
+  } else if (variant === "default") {
+    out.badges.push({ x: 110, y: 290, text: "0.0.0.0/0", color: YEL });
+    out.links = links.map((l) => (l.id === "R1-R3" ? { ...l, kind: "ebgp", label: "eBGP multihop" } : l));
+    out.steps = [
+      { caption: "R1 anuncia a rota default (0.0.0.0/0) a R2: AS-PATH 1.", hl: ["R1"],
+        packets: [{ link: "R1-R2", dir: "a>b", label: "AS-PATH 1", color: YEL }], links: { "R1-R3": { kind: "dim", label: "" } } },
+      { caption: "R2 repassa a R3 acrescentando o seu AS: AS-PATH 2 1, comprimento 2. É a default PRIMÁRIA de R3.", hl: ["R2", "R3"],
+        packets: [{ link: "R2-R3", dir: "a>b", label: "AS-PATH 2 1", color: CY }], links: { "R1-R2": { kind: "best" }, "R1-R3": { kind: "dim", label: "" } } },
+      { caption: "Backup: R1 também anuncia pela sessão multihop. SEM prepend, R3 vê AS-PATH 1 (comprimento 1) — mais curto que 2 1 — e prefere a direta. O backup virou primário!", hl: ["R3"],
+        packets: [{ link: "R1-R3", dir: "a>b", label: "AS-PATH 1", color: YEL }],
+        links: { "R1-R3": { kind: "best", arrow: "b>a", label: "best (AS Path)" }, "R2-R3": { kind: "dim", label: "perde" }, "R1-R2": { kind: "dim" } },
+        badges: [{ x: 670, y: 130, text: "backup virou primário ✗", color: RED }] },
+      { caption: "A solução: default-originate route-map + set as-path prepend. A direta sai com o AS 1 repetido (ex.: 1 1 1), mais longa que 2 1.", hl: ["R1"],
+        badges: [{ x: 110, y: 130, text: "prepend só na default de backup", color: YEL }],
+        packets: [{ link: "R1-R3", dir: "a>b", label: "AS-PATH 1 1 1", color: RED }], links: { "R1-R2": { kind: "best" }, "R2-R3": { kind: "best" } } },
+      { caption: "Agora R3 compara 2 1 (comprimento 2) com 1 1 1 (comprimento 3): vence R2 — best (AS Path). A direta fica de RESERVA.", hl: ["R3"],
+        links: { "R1-R2": { kind: "best", arrow: "a>b" }, "R2-R3": { kind: "best", arrow: "a>b", label: "best (AS Path)", flow: "a>b" }, "R1-R3": { kind: "dim", label: "backup" } } },
+    ];
+  } else if (variant === "failover") {
+    out.badges.push({ x: 670, y: 275, text: "default em R3", color: YEL });
+    out.links = links.map((l) => (l.id === "R1-R3" ? { ...l, kind: "dim", label: "backup (1 1 1)" } : l));
+    out.steps = [
+      { caption: "Normal: R3 usa a default por R2 (AS-PATH 2 1). A direta, com prepend (1 1 1), espera de reserva.", hl: ["R3"],
+        links: { "R1-R2": { kind: "best" }, "R2-R3": { kind: "best", arrow: "b>a", label: "R3 usa R2", flow: "b>a" } } },
+      { caption: "Você derruba o primário em R2: neighbor 10.0.12.1 shutdown. R2 manda ao R1 uma NOTIFICATION (Cease) e a sessão cai.", hl: ["R2"],
+        packets: [{ link: "R1-R2", dir: "b>a", label: "NOTIFICATION Cease", color: RED }],
+        links: { "R1-R2": { kind: "blocked", label: "shutdown" }, "R2-R3": { kind: "dim" } } },
+      { caption: "R3 perdeu a default 2 1 e passa a usar a direta (1 1 1): o BACKUP ASSUMIU. Sem o teste, isso seria só esperança.", hl: ["R3", "R1"],
+        links: { "R1-R2": { kind: "blocked", label: "shutdown" }, "R2-R3": { kind: "dim" }, "R1-R3": { kind: "best", arrow: "b>a", label: "R3 usa o backup", flow: "b>a" } } },
+      { caption: "Ao religar (no neighbor ... shutdown) a sessão volta, e R3 troca de novo para R2 — o AS-PATH curto (2 1) vence. Tudo reversível.", hl: ["R2"],
+        links: { "R1-R2": { kind: "best" }, "R2-R3": { kind: "best", arrow: "b>a", label: "R3 volta a R2", flow: "b>a" }, "R1-R3": { kind: "dim", label: "backup (1 1 1)" } } },
+    ];
+  }
+  return out;
+}
+
+
 const lab = {
   id: 8,
   protocol: "bgp",
@@ -57,93 +166,140 @@ const lab = {
   },
 
   // Teoria em slides — aba "📖 Teoria" do aluno e link público na tela
-  // inicial (?teoria=8). Inline: `código` e **negrito**.
+  // inicial (?teoria=8). Inline: `código` e **negrito**. Os diagramas animados
+  // (topology) usam valores genéricos (N, prepend): o slide público não tem sessão.
   theorySlides: [
     {
       title: "BGP — Multihop, Weight e Backup",
       subtitle: "Tudo o que você precisa saber para fazer o Lab 8",
       points: [
-        "**eBGP multihop**: sessão entre roteadores que **não** estão no mesmo enlace",
-        "O **TTL** do eBGP — e o que o `tcpdump` mostra",
-        "**Weight**: o caminho **primário**, local ao roteador",
-        "**default-originate** com **prepend**: a default de **backup**",
-        "**Testar** o backup: derrubar o primário e ver o que acontece",
+        "🔌 **eBGP multihop**: sessão entre roteadores que **não** estão no mesmo enlace",
+        "⏳ O **TTL** do eBGP — as 'vidas' do pacote, e o que o `tcpdump` mostra",
+        "⚖️ **Weight**: o caminho **primário**, local ao roteador",
+        "🛟 **default-originate** com **prepend**: a default de **backup**",
+        "💥 **Testar** o backup: derrubar o primário e ver o que acontece",
       ],
-      note: "Este lab parte dos Labs 1, 2 e 5: prepend, Weight × Local Preference e default-originate.",
+      note: "Este lab parte dos Labs 1, 2 e 5: prepend, Weight × Local Preference e default-originate. Os diagramas têm botões **Passo →** e **▶ Reproduzir**: antes de avançar, tente prever o que vem.",
+    },
+    {
+      title: "A missão: primário + backup",
+      topology: TOPO8("visao"),
+      points: [
+        "Uma empresa liga **dois ASes** por um caminho **primário** (R1 — R2 — R3) e quer um **backup** que só entra em ação se o primário cair.",
+        "O backup passa por um **provedor de trânsito IP** (R4) que **só encaminha pacotes**: não fala BGP.",
+        "Você vai montar as peças uma a uma e, no fim, **derrubar o primário de verdade**.",
+      ],
+      note: "🤔 Pense: se R4 não fala BGP, como R1 e R3 vão conversar BGP entre si?",
     },
     {
       title: "A topologia do Lab 8",
-      diagram: [
-        "              10.0.12.0/30",
-        "  ┌────┐ .1             .2 ┌────┐ .1   .2 ┌────┐",
-        "  │ R1 ├─eth1───────eth1─┤ R2 ├─eth2─eth1┤ R3 │",
-        "  │AS 1│                  │AS 2│ 10.0.23.0/30│AS 3│",
-        "  └─┬──┘                  └────┘          └─┬──┘",
-        "eth2│ 14.14.14.1/24                 10.0.34.1/30│eth2",
-        "    │                                          │",
-        "    └─ .4 eth2 ┌──────────┐ eth1 .2 ──────────┘",
-        "               │    R4    │",
-        "               │ sem BGP  │  só encaminha IP",
-        "               └──────────┘",
-      ].join("\n"),
+      topology: TOPO8("tour"),
       points: [
         "A cadeia **R1 — R2 — R3** é o caminho **primário**: ASes 1, 2 e 3 com sessões eBGP diretas.",
-        "**R4** não fala BGP: só **encaminha IP** entre R1 (`14.14.14.0/24`) e R3 (`10.0.34.0/30`). É o enlace de **backup**.",
+        "**R4** só **encaminha IP** entre R1 (`14.14.14.0/24`) e R3 (`10.0.34.0/30`). É o enlace de **backup**.",
         "O desafio: montar **uma sessão eBGP R1–R3 através de R4**, sem os dois estarem no mesmo enlace.",
       ],
     },
     {
-      title: "eBGP multihop",
+      title: "TTL: o número de vidas do pacote",
       points: [
-        "Por padrão o eBGP assume que o vizinho está **a 1 salto** (mesmo enlace) e envia os pacotes com **TTL 1**. Um roteador no meio **descarta** o pacote: a sessão **nunca sobe**.",
-        "`neighbor X ebgp-multihop N` envia com **TTL N**. R1–R4–R3 são **2 saltos**: precisa de **N ≥ 2**.",
-        "Mais duas coisas, que o lab pede: uma **rota IP** até o endereço do vizinho (`ip route 10.0.34.1/32 14.14.14.4`) e o **`update-source eth2`**, para as duas pontas usarem **endereços que o outro alcança**.",
+        "Todo pacote IP carrega um **TTL** (*time to live*): um contador de **vidas**. Cada roteador no caminho **tira uma vida**; ao chegar a **0**, o pacote **morre** (é descartado).",
+        "O **eBGP** parte da ideia de que o vizinho está **no mesmo enlace** (a 1 salto) e envia tudo com **TTL 1**: **uma vida só**. Se houver um roteador no meio, o pacote morre ali.",
+        "`neighbor X ebgp-multihop N` dá **N vidas** ao pacote. R1–R4–R3 são **2 saltos**: precisa de **N ≥ 2**.",
+        "Isso vale para **todo** o TCP da sessão: o **SYN** (o primeiro pacote) é o que você vai **ver** na captura.",
+      ],
+      flow: ["TTL 1 (padrão eBGP)", "roteador no meio: 1 → 0", "pacote descartado", "sessão não sobe"],
+      note: "🎮 Analogia: o TTL é o número de vidas num jogo. Com 1 vida, o primeiro obstáculo acaba com você.",
+    },
+    {
+      title: "O SYN no fio: sem e com multihop",
+      topology: TOPO8("ttl"),
+      points: [
+        "Sem multihop, o SYN sai com **`ttl 1`**, R4 o **descarta** e **não há SYN-ACK**.",
+        "Com multihop, o SYN sai com o **TTL que você configurou** e a resposta **chega** (`Flags [S.]`).",
+        "`show bgp neighbors` confirma: `External BGP neighbor may be up to 1 hops away` antes, `up to N hops away` depois.",
+      ],
+      note: "🤔 Antes de dar **Passo →**: o que acontece com o pacote quando chega a R4 com TTL 1?",
+    },
+    {
+      title: "Montando a sessão multihop",
+      flow: ["1 Rota IP até o vizinho", "2 update-source eth2", "3 ebgp-multihop N", "4 Mesmo nos DOIS lados", "5 clear bgp"],
+      points: [
+        "Uma **rota IP** até o endereço do vizinho (`ip route 10.0.34.1/32 14.14.14.4`): R1 precisa **saber alcançar** R3 — o BGP não cria rotas IP.",
+        "O **`update-source eth2`**: as duas pontas usam **endereços que o outro alcança**, não o do enlace direto.",
         "Os dois lados precisam combinar: R1 aponta para `10.0.34.1` e R3 aponta para `14.14.14.1`.",
+        "Depois de mudar, `clear bgp <vizinho>` faz o FRR **tentar de novo agora**; sem ele, a próxima tentativa só vem no ciclo de reconexão (cerca de **1 minuto**).",
       ],
       code: "ip route 10.0.34.1/32 14.14.14.4\nrouter bgp 1\n neighbor 10.0.34.1 remote-as 3\n neighbor 10.0.34.1 update-source eth2\n neighbor 10.0.34.1 ebgp-multihop 5\n address-family ipv4 unicast\n  neighbor 10.0.34.1 activate",
     },
     {
-      title: "O TTL no fio",
+      title: "O TTL no tcpdump",
       code: "(sem multihop)\n  Out IP (tos 0xc0, ttl 1, ...)\n    14.14.14.1.37257 > 10.0.34.1.179: Flags [S], ...\n  (nenhuma resposta: R4 descartou o pacote)\n\n(com ebgp-multihop 4)\n  Out IP (tos 0xc0, ttl 4, ...)\n    14.14.14.1.33387 > 10.0.34.1.179: Flags [S], ...\n  In  IP (tos 0xc0, ttl 254, ...)\n    10.0.34.1.179 > 14.14.14.1.33387: Flags [S.], ...",
       points: [
-        "O **SYN** é o primeiro pacote do TCP. Sem multihop sai com **`ttl 1`** — e **não há SYN-ACK**.",
-        "Com multihop, o SYN sai com o **TTL que você configurou** e a resposta **chega** (`Flags [S.]`). A sessão sobe e começa o OPEN.",
-        "`show bgp neighbors` confirma: `External BGP neighbor may be up to 1 hops away` antes, `up to N hops away` depois.",
-        "Depois de mudar a configuração, `clear bgp <vizinho>` faz o FRR **tentar de novo agora**; sem ele, a próxima tentativa só vem no ciclo de reconexão (cerca de **1 minuto**).",
+        "O **SYN** é o primeiro pacote do TCP: `Flags [S]`. Sem multihop sai com **`ttl 1`** — e **não há `[S.]`** (SYN-ACK).",
+        "Com multihop, o SYN sai com o **TTL configurado** e a resposta **chega**. A sessão sobe e começa o OPEN.",
       ],
       note: "Valores reais do tcpdump em R1; o TTL é o do seu multihop.",
     },
     {
       title: "Weight — o primário",
+      topology: TOPO8("weight"),
+      flow: ["1 Weight (maior) ← aqui", "2 Local Pref", "3 Rota local", "4 AS-PATH (mais curto)", "5 ORIGIN", "6 MED", "…"],
       points: [
-        "Para **10.3.3.0/24**, R1 tem **dois caminhos**: o **direto** por R3 (AS-PATH `3`) e o por **R2** (AS-PATH `2 3`). O direto é **mais curto** e vence — **o backup viraria o primário**.",
+        "Para **10.3.3.0/24**, R1 tem **dois caminhos**; o direto é **mais curto** e vence — **o backup viraria o primário**.",
         "`neighbor 10.0.12.2 weight N` dá **peso local** a **tudo** que R1 recebe de R2. **Weight** é o critério **1**: vence o AS-PATH.",
-        "Sem route-map, é um comando **simples** por vizinho. Vale para **todos** os prefixos vindos de R2.",
         "Weight **não é anunciado** (Lab 2): só R1 muda — que é o que se quer aqui.",
       ],
+      note: "🤔 Antes de dar **Passo →**: se o AS-PATH curto vence, como fazer R1 preferir o caminho LONGO por R2?",
     },
     {
       title: "A default de backup",
+      topology: TOPO8("default"),
       points: [
         "R1 já anuncia uma **default** a R2 (que a passa a R3): é o caminho **primário** da default (`2 1`, comprimento 2).",
         "Para R3 ter um **backup**, R1 anuncia a default **também** pela sessão multihop: `neighbor 10.0.34.1 default-originate`.",
-        "Mas **sozinha** ela faz R3 preferir a default **direta** (`1`, comprimento 1) à via R2 (`2 1`): o backup passa a ser o **primário**. Validado neste lab.",
-        "A solução é **prepend** só nessa default: `default-originate route-map PREPEND_DEFAULT`, com `set as-path prepend`. O FRR **aplica** o set: a default direta vira `1 1 1`, **mais longa** que `2 1`.",
+        "**Sozinha** ela faz R3 preferir a direta (`1`) à via R2 (`2 1`): o backup passa a ser o **primário**. Validado neste lab.",
+        "A solução é **prepend** só nessa default: o FRR **aplica** o `set` e a direta fica **mais longa** que `2 1`.",
       ],
+      note: "🤔 Antes de dar **Passo →**: qual das duas defaults R3 escolheria só pelo comprimento do AS-PATH?",
+    },
+    {
+      title: "default-originate com route-map",
       code: "route-map PREPEND_DEFAULT permit 10\n set as-path prepend 1 1\n!\nrouter bgp 1\n address-family ipv4 unicast\n  neighbor 10.0.34.1 default-originate route-map PREPEND_DEFAULT",
+      flow: ["default-originate", "→ route-map PREPEND_DEFAULT", "→ set as-path prepend", "→ UPDATE com AS-PATH mais longo"],
+      points: [
+        "O `default-originate` **simples** não aceita um `set`: com **`route-map`**, o FRR aplica o `set as-path prepend` **à default** gerada.",
+        "O prepend vale **só para a default de R3**: as outras rotas e as sessões com R2 não mudam.",
+        "No fio, o UPDATE de R1 para `10.0.34.1` traz `AS Path` com o AS 1 **repetido** e `Updated routes: 0.0.0.0/0`.",
+      ],
     },
     {
       title: "Testar o backup de verdade",
+      topology: TOPO8("failover"),
       points: [
         "Um backup **não testado** é só esperança. Aqui dá para testar **sem risco**: cada aluno tem a **sua própria rede**.",
-        "Em R2, `neighbor 10.0.12.1 shutdown` derruba a sessão R1–R2. R3 perde a default `2 1` e passa a usar a **direta**, `1 1 1`.",
-        "Ao religar (`no neighbor 10.0.12.1 shutdown`), R3 **volta** para a via R2, por causa do **AS-PATH mais curto**.",
-        "No fio, o R1 vê o **NOTIFICATION** que R2 manda ao desligar a sessão.",
+        "Em R2, `neighbor 10.0.12.1 shutdown` derruba a sessão R1–R2. R3 perde a default `2 1` e usa a **direta**.",
+        "Ao religar (`no neighbor 10.0.12.1 shutdown`), R3 **volta** para a via R2, pelo **AS-PATH mais curto**.",
+        "No fio, o R1 vê a **NOTIFICATION** que R2 manda ao desligar a sessão.",
       ],
       note: "Validado neste lab: com a sessão R1–R2 desligada, R3 mostra a default via 14.14.14.1 como best.",
     },
     {
+      title: "Quem faz o quê?",
+      table: {
+        head: ["Ferramenta", "Onde age", "Quem fica sabendo", "Papel no Lab 8"],
+        rows: [
+          ["**ebgp-multihop**", "TTL dos pacotes da sessão", "Só os dois pontas", "Deixa R1–R3 conversarem **através de R4**"],
+          ["**Weight**", "Decisão **local** de R1", "**Ninguém** (não é anunciado)", "Devolve o **primário** a R2"],
+          ["**default-originate**", "Gera `0.0.0.0/0` para o vizinho", "O vizinho", "Cria a default de **backup**"],
+          ["**AS-PATH prepend**", "No **anúncio** de saída", "O vizinho (R3)", "Faz o backup parecer **mais longo**"],
+        ],
+      },
+      note: "Weight muda o que **eu** escolho; o prepend muda o que o **vizinho** escolhe.",
+    },
+    {
       title: "Roteiro do Lab 8",
+      flow: ["Passo 1: default", "Passo 2: multihop", "Passo 3: Weight", "Passo 4: default de backup", "Passo 5: derrubar o primário"],
       points: [
         "**Passo 1:** a **default** de R1 para R2, e R3 aprendendo por R2.",
         "**Passo 2:** a sessão **multihop** R1–R3: primeiro **sem** `ebgp-multihop` (veja o **TTL 1** e nenhuma resposta), depois **com**.",
