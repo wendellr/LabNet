@@ -29,6 +29,97 @@ const PFX_LIST = "(?:\\s+\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+)*?";
 const ROUTES_TO = (pfx) => "Updated routes:" + PFX_LIST + "\\s+" + pfx;
 const WITHDRAWN = (pfx) => "Withdrawn routes:" + PFX_LIST + "\\s+" + pfx;
 
+// Diagramas dos slides (desenhados no frontend, ver SlideTopology.jsx). Variantes: "tour" (a rede), "caminhos"
+// (como R1 chega a 172.16.4.0/24), "prepend", "ignore" e "agg" (agregado). Os sufixos _a/_b partem os passos de
+// "agg" em duas etapas. Nos slides públicos não há variáveis: o prepend aparece como "3 3 3 4".
+function TOPO5(variantFull) {
+  const [variant, part] = variantFull.split("_");
+  const YEL = "#fbbf24", GRN = "#4ade80", RED = "#f87171", CY = "#67e8f9";
+  const nodes = [
+    { id: "R1", x: 90, y: 215, label: "R1", sub: "AS 1" },
+    { id: "R2", x: 330, y: 65, label: "R2", sub: "AS 2" },
+    { id: "R3", x: 330, y: 365, label: "R3", sub: "AS 3" },
+    { id: "R4", x: 640, y: 365, label: "R4", sub: "AS 4" },
+  ];
+  const links = [
+    { id: "R1-R2", a: "R1", b: "R2", kind: "ebgp", label: "eBGP" },
+    { id: "R1-R3", a: "R1", b: "R3", kind: "ebgp", label: "eBGP" },
+    { id: "R2-R3", a: "R2", b: "R3", kind: "ebgp", label: "eBGP" },
+    { id: "R3-R4", a: "R3", b: "R4", kind: "ebgp", label: "eBGP" },
+  ];
+  const badges = [
+    { x: 90, y: 275, text: "172.16.1.0/24", color: YEL },
+    { x: 520, y: 65, text: "172.16.2.0/24", color: YEL },
+    { x: 330, y: 425, text: "172.16.3.0/24", color: YEL },
+    { x: 640, y: 425, text: "172.16.4.0/24", color: YEL },
+  ];
+  const out = { w: 780, h: 450, nodes, links, badges };
+
+  if (variant === "tour") {
+    out.steps = [
+      { caption: "R1 (AS 1) tem a sua rede, 172.16.1.0/24, e fala eBGP com R2 e com R3. É o roteador onde você vai ver as decisões.", hl: ["R1"] },
+      { caption: "R2 (AS 2) tem 172.16.2.0/24 e é o caminho INDIRETO de R1 até R3 e R4.", hl: ["R2"] },
+      { caption: "R3 (AS 3) tem 172.16.3.0/24 e fica no MEIO: aprende de todo mundo. Quase toda a configuração do lab é em R3.", hl: ["R3"] },
+      { caption: "R4 (AS 4) é o fim da linha: origina 172.16.4.0/24 e só fala com R3.", hl: ["R4"] },
+    ];
+  } else if (variant === "caminhos") {
+    out.steps = [
+      { caption: "R4 anuncia a sua rede, 172.16.4.0/24, a R3: AS-PATH 4.", hl: ["R4"],
+        packets: [{ link: "R3-R4", dir: "b>a", label: "AS-PATH 4", color: YEL }] },
+      { caption: "R3 repassa a R1 e a R2, acrescentando o seu AS: AS-PATH 3 4.", hl: ["R3"],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "AS-PATH 3 4", color: CY }, { link: "R2-R3", dir: "b>a", label: "AS-PATH 3 4", color: CY }] },
+      { caption: "R2 repassa a R1, acrescentando o AS 2: AS-PATH 2 3 4. Agora R1 tem DOIS caminhos para 172.16.4.0/24.", hl: ["R2", "R1"],
+        packets: [{ link: "R1-R2", dir: "b>a", label: "AS-PATH 2 3 4", color: GRN }] },
+      { caption: "R1 conta os saltos: 3 4 tem comprimento 2; 2 3 4 tem comprimento 3. O mais curto vence — best (AS Path), pelo caminho direto de R3.", hl: ["R1"],
+        badges: [{ x: 90, y: 320, text: "2 saltos < 3 saltos", color: GRN }],
+        links: { "R1-R3": { kind: "best", arrow: "b>a", label: "best (AS Path)", flow: "b>a" }, "R1-R2": { kind: "dim", label: "perde" } } },
+    ];
+  } else if (variant === "prepend") {
+    out.steps = [
+      { caption: "R3 aplica uma route-map de SAÍDA para R1, só para 172.16.4.0/24: ele repete o AS 3 no caminho (prepend).", hl: ["R3"],
+        badges: [{ x: 520, y: 320, text: "route-map PREPEND_TO_R1 out", color: YEL }],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "AS-PATH 3 3 3 4", color: RED }] },
+      { caption: "R1 recalcula: o caminho direto agora tem comprimento 4 (3 3 3 4); o de R2 continua com 3 (2 3 4). R1 TROCA para R2.", hl: ["R1"],
+        badges: [{ x: 90, y: 320, text: "4 saltos > 3 saltos", color: RED }],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "best (AS Path)", flow: "b>a" }, "R1-R3": { kind: "dim", label: "3 3 3 4" } } },
+      { caption: "A prefix-list limita o efeito a UM prefixo: 172.16.3.0/24, de R3, continua com AS-PATH 3 (a cláusula 20, sem match, deixa o resto passar).", hl: ["R3"],
+        badges: [{ x: 90, y: 320, text: "172.16.4.0/24 → R2", color: YEL }],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "172.16.3.0/24 · AS-PATH 3", color: GRN }],
+        links: { "R1-R2": { kind: "best" }, "R1-R3": { kind: "ebgp", label: "eBGP" } } },
+    ];
+  } else if (variant === "ignore") {
+    out.steps = [
+      { caption: "Ponto de partida: por causa do prepend, R1 usa R2 (2 3 4, comprimento 3) e deixa o direto (3 3 3 4, comprimento 4) de lado.", hl: ["R1"],
+        links: { "R1-R2": { kind: "best", arrow: "b>a", label: "best (AS Path)" }, "R1-R3": { kind: "dim", label: "3 3 3 4" } } },
+      { caption: "Você configura em R1: bgp bestpath as-path ignore. R1 PARA de contar o tamanho do AS-PATH. É só dele: nenhum vizinho fica sabendo.", hl: ["R1"],
+        badges: [{ x: 90, y: 320, text: "R1: as-path ignore", color: YEL }],
+        links: { "R1-R2": { kind: "ebgp", label: "2 3 4" }, "R1-R3": { kind: "ebgp", label: "3 3 3 4" } } },
+      { caption: "Sem o tamanho, os dois caminhos EMPATAM. O BGP desce a lista até o Router ID: R3 (3.3.3.3) vence R2 (22.22.22.22). R1 VOLTA a R3 — o prepend foi anulado.", hl: ["R1", "R3"],
+        badges: [{ x: 90, y: 320, text: "R1: as-path ignore", color: YEL }, { x: 520, y: 405, text: "Router ID 3.3.3.3", color: GRN }, { x: 520, y: 105, text: "Router ID 22.22.22.22", color: RED }],
+        links: { "R1-R3": { kind: "best", arrow: "b>a", label: "best (Router ID)", flow: "b>a" }, "R1-R2": { kind: "dim", label: "perde" } } },
+    ];
+  } else if (variant === "agg") {
+    out.steps = [
+      { caption: "R3 conhece QUATRO redes /24 dentro de 172.16.0.0/16: a sua, as de R1 e R2 (aprendidas) e a de R4.", hl: ["R3"],
+        badges: [{ x: 520, y: 300, text: "R3 conhece 172.16.1–4.0/24", color: YEL }] },
+      { caption: "Você cria aggregate-address 172.16.0.0/16 SEM summary-only: R3 anuncia o /16 E continua anunciando os /24. A tabela de R1 só cresce.", hl: ["R3", "R1"],
+        badges: [{ x: 520, y: 300, text: "aggregate-address 172.16.0.0/16", color: YEL }, { x: 90, y: 320, text: "R1 vê: /16 + os /24", color: CY }],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "/16 + todos os /24", color: CY }] },
+      { caption: "Agora COM summary-only: primeiro R3 RETIRA (withdrawn) os /24 que o agregado cobre — as de R3 e de R4.", hl: ["R3"],
+        badges: [{ x: 520, y: 300, text: "summary-only", color: YEL }],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "Withdrawn: .3 e .4", color: RED }] },
+      { caption: "Depois anuncia só o /16: AS-PATH 3, com Atomic Aggregate e Aggregator (quem agregou). Os ASes 1, 2 e 4 não aparecem mais.", hl: ["R3"],
+        badges: [{ x: 520, y: 300, text: "/24 suprimidas (s)", color: RED }],
+        packets: [{ link: "R1-R3", dir: "b>a", label: "172.16.0.0/16 · AS-PATH 3", color: CY }] },
+      { caption: "Resultado em R1: a /16 (de R3), a sua .1 e a .2 de R2 (R2 a anuncia direto). As .3 e .4 SUMIRAM — mas R1 ainda alcança 172.16.4.4 pela /16.", hl: ["R1"],
+        badges: [{ x: 90, y: 320, text: "R1: /16 + .1 + .2", color: GRN }],
+        links: { "R1-R3": { kind: "best", arrow: "b>a", label: "usa a /16", flow: "b>a" } } },
+    ];
+  }
+  if (part && out.steps) out.steps = part === "a" ? out.steps.slice(0, 2) : out.steps.slice(2);
+  return out;
+}
+
 const lab = {
   id: 5,
   protocol: "bgp",
@@ -54,76 +145,91 @@ const lab = {
   },
 
   // Teoria em slides — aba "📖 Teoria" do aluno e link público na tela
-  // inicial (?teoria=5). Inline: `código` e **negrito**.
+  // inicial (?teoria=5). Inline: `código` e **negrito**. A teoria segue a ORDEM do
+  // roteiro: cada "Passo N" diz o que fazer, o que ver e por quê. Os diagramas
+  // animados (topology) usam valores genéricos (prepend "3 3 3 4"): o slide
+  // público não tem sessão — o valor exato do seu lab aparece no passo.
   theorySlides: [
     {
       title: "BGP — AS-PATH Ignore e Agregação",
-      subtitle: "Tudo o que você precisa saber para fazer o Lab 5",
+      subtitle: "O que você vai construir no Lab 5, passo a passo",
       points: [
-        "**Prepend** de novo — agora limitado a **um prefixo**",
-        "**`bgp bestpath as-path ignore`**: o que acontece com o prepend",
-        "O **desempate** quando o AS-PATH deixa de contar",
-        "**Agregação**: um prefixo **/16** no lugar de vários **/24**",
-        "**`summary-only`**: o que ele **esconde** — e de quem",
-        "O **UPDATE do agregado** no fio",
+        "🧭 Ver **por que** R1 escolhe um caminho (o AS-PATH mais curto)",
+        "🎭 **Disfarçar** um caminho com **prepend** — e ver R1 trocar de rota",
+        "🙈 **Desfazer** o prepend com `as-path ignore` — e descobrir quem desempata",
+        "📦 **Agregar** vários /24 em um /16 e ver o que **some** na tabela de R1",
       ],
-      note: "Este lab parte dos Labs 1 e 3: a ordem de decisão do BGP, o prepend e a prefix-list + route-map.",
+      note: "Estes slides seguem a **ordem do roteiro**: cada passo mostra **o que digitar, o que ver e por quê**. Os diagramas têm **Passo →** e **▶ Reproduzir**; antes de avançar, tente prever o que vem.",
     },
     {
-      title: "A topologia do Lab 5",
-      diagram: [
-        "              10.0.12.0/30",
-        "  ┌────┐ .1             .2 ┌────┐",
-        "  │ R1 ├─eth1───────eth1─┤ R2 │ 22.22.22.22",
-        "  │AS 1│                  │AS 2│",
-        "  └─┬──┘                  └─┬──┘",
-        "eth2│ .5                eth2│ .9",
-        "    │ 10.0.13.4/30          │ 10.0.23.8/30",
-        "    │ .6                    │ .10",
-        "  ┌─┴──────────────────────┴─┐",
-        "  │           R3 (AS 3)       │ 3.3.3.3",
-        "  └────────────┬──────────────┘",
-        "          eth3 │ 10.0.34.12/30",
-        "           ┌───┴──┐",
-        "           │  R4  │ 172.16.4.0/24",
-        "           │ AS 4 │",
-        "           └──────┘",
-      ].join("\n"),
+      title: "Ponto de partida: o que já vem pronto",
+      topology: TOPO5("tour"),
       points: [
-        "Cada roteador anuncia um `/24` da faixa `172.16.0.0/16`: R1 `.1.0`, R2 `.2.0`, R3 `.3.0`, R4 `.4.0`.",
-        "**R1** alcança `172.16.4.0/24` por **dois caminhos**: direto por R3 (AS-PATH `3 4`) e pelo vizinho R2 (AS-PATH `2 3 4`).",
-        "R2 tem o **Router ID `22.22.22.22`** — numericamente **maior** que o `3.3.3.3` de R3. Isso importa no passo 3.",
+        "✅ **Já configurado:** 4 roteadores, 4 ASes, sessões eBGP **R1–R2**, **R1–R3**, **R2–R3** e **R3–R4**; cada um anuncia a sua rede `172.16.N.0/24`.",
+        "🔨 **Falta você fazer:** o **prepend** em R3, o **`as-path ignore`** em R1 e o **agregado** em R3.",
+        "Quase tudo é em **R3** (o do meio). **R1** é onde você **observa** as decisões — e onde roda a captura.",
       ],
     },
     {
-      title: "Prepend, só de um prefixo",
-      points: [
-        "Como no Lab 1: o **AS-PATH mais curto vence**, então **repetir o ASN** torna o caminho **menos atraente**.",
-        "Aqui R3 faz o prepend **só em `172.16.4.0/24`**, no anúncio a R1: uma **prefix-list** no `match` e a cláusula 20 (sem `match`) deixando passar o resto.",
-        "O caminho de R1 via R3 vira `3 3 3 4` (4 ASes) contra `2 3 4` (3 ASes): **R1 troca para R2**.",
-      ],
-      code: "ip prefix-list NET_R4 seq 10 permit 172.16.4.0/24\n!\nroute-map PREPEND_TO_R1 permit 10\n match ip address prefix-list NET_R4\n set as-path prepend 3 3\nroute-map PREPEND_TO_R1 permit 20\n!\nrouter bgp 3\n address-family ipv4 unicast\n  neighbor 10.0.13.5 route-map PREPEND_TO_R1 out",
+      title: "O roteiro em um olhar",
+      flow: ["1 Reconhecer", "2 Prepend", "3 AS-PATH ignore", "4 Agregado", "Desafio"],
+      table: {
+        head: ["Passo", "Onde", "Você faz", "Você prova"],
+        rows: [
+          ["**1**", "R1 (olhar)", "só `show ip bgp 172.16.4.0/24`", "R1 tem **2 caminhos**; vence o **mais curto** (`3 4`)"],
+          ["**2**", "R3", "`route-map` com `set as-path prepend`", "R1 **troca para R2** — `best (AS Path)`"],
+          ["**3**", "R1", "`bgp bestpath as-path ignore`", "R1 **volta a R3** — `best (Router ID)`"],
+          ["**4**", "R3", "`aggregate-address … summary-only`", "R1 **perde** `.3` e `.4`; só a `/16`"],
+        ],
+      },
+      note: "📡 Abra a captura em **R1** (interface *todas*, protocolo *BGP*) no **Passo 1** e **deixe rodando até o Passo 4**: a nota confere as suas capturas.",
     },
     {
-      title: "O prepend no fio",
+      title: "Passo 1 — Reconhecer os dois caminhos",
+      topology: TOPO5("caminhos"),
+      points: [
+        "🎯 **Objetivo:** entender, **antes de mexer em nada**, por que R1 escolhe o caminho que escolhe.",
+        "👀 **Você vê:** em R1, `show ip bgp 172.16.4.0/24` com **dois caminhos** — `3 4` (via R3) e `2 3 4` (via R2) — e o `best (AS Path)` no direto.",
+        "🧠 **Por quê:** cada AS que repassa a rota **acrescenta o seu número** ao AS-PATH. Com o resto igual, o BGP prefere o **mais curto**.",
+      ],
+      code: "! em R1 (só observar)\nshow bgp summary\nshow ip bgp 172.16.4.0/24",
+      note: "🤔 Antes de dar **Passo →**: qual dos dois caminhos R1 vai preferir? Por quê?",
+    },
+    {
+      title: "Passo 2 — Prepend, só de um prefixo",
+      topology: TOPO5("prepend"),
+      flow: ["prefix-list NET_R4", "→ route-map (match)", "→ set as-path prepend", "→ cláusula 20: libera o resto", "→ out para R1", "clear bgp * soft out"],
+      points: [
+        "🎯 **Objetivo:** fazer R1 **abandonar** o caminho de R3 **só para `172.16.4.0/24`**, tornando-o artificialmente mais longo.",
+        "⌨️ **Você digita (R3):** prefix-list + route-map com `set as-path prepend`, aplicada **outbound** ao vizinho R1 (`10.0.13.5`). O valor do prepend está no passo.",
+        "👀 **Você vê:** em R1, o caminho de R3 como `3 3 3 4` e o best **trocando para R2**; na captura, o UPDATE de R3 com o `3` repetido.",
+        "🧠 **Por quê:** quem muda o **anúncio** (prepend) influencia **quem recebe**. A prefix-list evita atingir os outros prefixos.",
+      ],
+      code: "! em R3\nip prefix-list NET_R4 seq 10 permit 172.16.4.0/24\nroute-map PREPEND_TO_R1 permit 10\n match ip address prefix-list NET_R4\n set as-path prepend 3 3        ! valor do seu passo\nroute-map PREPEND_TO_R1 permit 20\nexit\nrouter bgp 3\n address-family ipv4 unicast\n  neighbor 10.0.13.5 route-map PREPEND_TO_R1 out\nend\nclear bgp * soft out",
+      note: "🤔 Antes de dar **Passo →**: com o caminho de R3 mais longo, R1 continua nele ou troca?",
+    },
+    {
+      title: "O que procurar no tcpdump (Passo 2)",
       code: "10.0.13.6.41258 > 10.0.13.5.179: BGP\n\tUpdate Message (2)\n\t  Origin (1), length: 1, Flags [T]: IGP\n\t  AS Path (2), length: 18, Flags [TE]: 3 3 3 4\n\t  Next Hop (3), length: 4, Flags [T]: 10.0.13.6\n\t  Updated routes:\n\t    172.16.4.0/24",
       points: [
-        "É o UPDATE de R3 para R1: o `AS Path` mostra o **`3`** repetido e o **`4`** da origem.",
-        "O **AS-PATH** cresce **no anúncio**: quem decide é R1, que vê um caminho mais longo.",
+        "É o UPDATE de **R3 para R1** (`10.0.13.6 > 10.0.13.5`): o `AS Path` mostra o **`3` repetido** e o **`4`** da origem.",
+        "O **AS-PATH cresce no anúncio**: quem decide é R1, que vê um caminho mais longo.",
       ],
-      note: "Saída real do tcpdump em R1 depois do prepend (com prepend 3 3).",
+      note: "Saída real do tcpdump em R1 (com prepend 3 3). A nota confere **o seu** valor de prepend nessa captura.",
     },
     {
-      title: "bgp bestpath as-path ignore",
+      title: "Antes do Passo 3: e se o tamanho não contar?",
+      flow: ["1 Weight", "2 Local Pref", "3 Rota local", "4 AS-PATH (mais curto) ← o que o prepend usa", "5 Origin", "6 MED", "7 eBGP > iBGP", "8 IGP", "9 Router ID"],
       points: [
-        "Remove o **comprimento do AS-PATH** da decisão — **neste roteador**. É um ajuste **local**: não vai para os vizinhos.",
-        "O AS-PATH continua **nas rotas** e **nos UPDATEs**; só deixa de **desempatar**.",
-        "Efeito: o **prepend que R3 fez perde o poder** sobre R1. O caminho `3 3 3 4` e o `2 3 4` passam a **empatar**, e o BGP segue na lista de critérios.",
-        "É por isso que vale ter cuidado: um ajuste **local** de um time pode **desfazer** o engenharia de tráfego de **outro**.",
+        "O prepend funciona **só** porque o critério **4** (AS-PATH mais curto) existe. Quem **desliga** esse critério **anula** o prepend.",
+        "`bgp bestpath as-path ignore` faz exatamente isso, **no roteador onde é digitado**. Ninguém mais fica sabendo.",
+        "Sem o critério 4, os caminhos de R1 empatam em tudo e a decisão **desce a lista** até o **9: Router ID**.",
       ],
+      note: "⚠️ Um ajuste **local** de um time pode **desfazer** o prepend que **outro** time montou.",
     },
     {
-      title: "Quando o AS-PATH não decide: o desempate",
+      title: "Passo 3 — Ignorar o tamanho do AS-PATH",
+      topology: TOPO5("ignore"),
       table: {
         head: ["Critério (depois do AS-PATH)", "O que o FRR escreve"],
         rows: [
@@ -136,71 +242,103 @@ const lab = {
         ],
       },
       points: [
-        "Os dois caminhos de R1 empatam em tudo — **inclusive no tipo de sessão** (eBGP nos dois). Resta o critério 9.",
-        "O FRR, por padrão, prefere o caminho **mais antigo**: o resultado depende de **qual UPDATE chegou primeiro** — não é reproduzível.",
-        "Com **`bgp bestpath compare-routerid`**, o menor **Router ID** vence: R3 (`3.3.3.3` < `22.22.22.22`). **R1 volta a R3**, mesmo com o prepend.",
-        "O lab já sobe R1 com `compare-routerid` para o resultado ser o mesmo para todo mundo.",
+        "🎯 **Objetivo:** anular o prepend **sem tocar em R3**: só em **R1**.",
+        "⌨️ **Você digita (R1):** `bgp bestpath as-path ignore` e `clear bgp * soft`. Compare o best **antes e depois**.",
+        "👀 **Você vê:** R1 **voltando a R3**, agora com **`best (Router ID)`**: `3.3.3.3` vence `22.22.22.22`.",
+        "🧠 **Por quê:** o R1 deste lab já tem `bgp bestpath compare-routerid`. **Sem ele**, o FRR ficaria com o caminho **mais antigo** (`Older Path`) e **nada mudaria**.",
       ],
-      note: "Validado neste lab: sem o `compare-routerid`, R1 mantém o caminho de R2 com `best (Older Path)` e nada muda.",
+      code: "! em R1\nrouter bgp 1\n bgp bestpath as-path ignore\nend\nclear bgp * soft",
+      note: "🤔 Antes de dar **Passo →**: com o tamanho ignorado, o que desempata os dois caminhos?",
     },
     {
-      title: "Agregação",
+      title: "Agregação: resumir vários /24 em um /16",
       points: [
-        "Em vez de anunciar **vários /24**, anuncia-se **um /16** que os cobre. A tabela BGP do **resto do mundo** fica menor.",
-        "É a mesma ideia do **summary** do OSPF (Lab 11): o roteador de borda **resume**.",
-        "Requisito: o roteador precisa ter **pelo menos uma rota mais específica** dentro da faixa **na sua tabela BGP**. R3 tem: conhece os `/24` de R1, R2, R3 e R4.",
-        "O agregado é **originado por R3**: a partir de agora, `172.16.0.0/16` é um prefixo **do AS 3**.",
+        "Um provedor com muitas redes vizinhas (`172.16.1.0/24`, `.2`, `.3`, `.4`) pode anunciar **um resumo**: `172.16.0.0/16`. Menos rotas na tabela de **todo mundo**.",
+        "É o `aggregate-address 172.16.0.0/16` — digitado no roteador que **conhece** as específicas (aqui, **R3**).",
+        "O agregado só existe se houver **pelo menos uma rota mais específica** dentro dele.",
+        "A pergunta do passo: **o que acontece com os /24 originais?** Depende do `summary-only`.",
       ],
-      code: "router bgp 3\n address-family ipv4 unicast\n  aggregate-address 172.16.0.0/16",
+      flow: ["vários /24", "→ aggregate-address /16", "→ summary-only?", "→ some ou continua"],
+      note: "🎮 Analogia: o agregado é o **CEP da cidade**; os /24 são os **endereços das ruas**.",
     },
     {
-      title: "summary-only",
+      title: "Passo 4 (etapa 1) — Agregar sem summary-only",
+      topology: TOPO5("agg_a"),
       points: [
-        "**Sem** `summary-only`: R3 anuncia o `/16` **e continua anunciando** os `/24`. A tabela dos vizinhos **cresce** em vez de diminuir.",
-        "**Com** `summary-only`: R3 anuncia **só** o `/16` e **suprime** os `/24` que ele cobre.",
-        "A supressão vale para **todas** as rotas cobertas que R3 tem — **inclusive as dos outros ASes**: os `/24` de R1 e de R2 que R3 aprendeu também deixam de ser repassados.",
-        "No FRR, essas rotas ficam com a letra **`s`** (*suppressed*) em `show ip bgp` de R3.",
-        "Resultado em R1: some `172.16.3.0/24` e `172.16.4.0/24`; R1 passa a alcançar os hosts de R3 e R4 **pela `/16`**.",
+        "🎯 **Objetivo:** criar o agregado e ver o **efeito colateral inútil**: a tabela só **cresce**.",
+        "⌨️ **Você digita (R3):** `aggregate-address 172.16.0.0/16` — **sem** `summary-only`.",
+        "👀 **Você vê:** em R1, a `172.16.0.0/16` **e** todos os `/24` ainda lá.",
       ],
-      note: "Validado neste lab: R1 continua com o `/24` de R2, porque R2 o anuncia direto a R1.",
+      code: "! em R3 — etapa 1\nrouter bgp 3\n address-family ipv4 unicast\n  aggregate-address 172.16.0.0/16\nend\nclear bgp * soft out",
+      note: "🤔 Antes de dar **Passo →**: a `/16` vai **substituir** os `/24` ou **somar-se** a eles?",
     },
     {
-      title: "O agregado no fio",
+      title: "Passo 4 (etapa 2) — summary-only: o que some?",
+      topology: TOPO5("agg_b"),
+      points: [
+        "🎯 **Objetivo:** esconder as específicas. Com **`summary-only`**, R3 anuncia **só o /16**.",
+        "👀 **Você vê:** em R1 somem `172.16.3.0/24` e `172.16.4.0/24`; em R3 as `/24` ganham a letra **`s`** (*suppressed*); na captura, **Withdrawn routes**, **Atomic Aggregate** e **Aggregator**.",
+        "🧠 **Por quê:** a supressão vale para **todos** os `/24` que R3 conhece — **inclusive os de outros ASes**. R1 só mantém o `.2`, porque **R2** o anuncia direto.",
+      ],
+      code: "! em R3 — etapa 2\nrouter bgp 3\n address-family ipv4 unicast\n  aggregate-address 172.16.0.0/16 summary-only\nend\nclear bgp * soft out\n\n! em R1 (conferir)\nshow ip bgp\nshow ip route 172.16.4.4",
+      note: "Se o FRR avisar `There is already same aggregate network`, pode ignorar: a opção foi aplicada.",
+    },
+    {
+      title: "O que procurar no tcpdump (Passo 4)",
       code: "10.0.13.6 > 10.0.13.5: BGP\n\tUpdate Message (2)\n\t  Withdrawn routes:\n\t    172.16.3.0/24\n\t    172.16.4.0/24\n\tUpdate Message (2)\n\t  Origin (1), length: 1, Flags [T]: IGP\n\t  AS Path (2), length: 6, Flags [TE]: 3\n\t  Atomic Aggregate (6), length: 0, Flags [T]:\n\t  Aggregator (7), length: 8, Flags [OT]:  AS #3, origin 3.3.3.3\n\t  Updated routes:\n\t    172.16.0.0/16",
       points: [
-        "**Withdrawn routes**: R3 **retira** as `/24` que passou a suprimir — o aviso vai **junto** no mesmo pacote.",
-        "**Atomic Aggregate**: marca que o caminho **perdeu informação** (a rota é um resumo, não o caminho real).",
+        "**Withdrawn routes**: R3 **retira** as `/24` que passou a suprimir — o aviso vai **junto**, no mesmo pacote.",
+        "**Atomic Aggregate**: marca que o caminho **perdeu informação** (é um resumo, não o caminho real).",
         "**Aggregator**: **quem** gerou o agregado (`AS #3, origin 3.3.3.3`).",
-        "O **AS-PATH** do agregado é **só `3`**: os ASes 1, 2 e 4 dos `/24` **não aparecem**. Isso é o custo da agregação.",
+        "O **AS-PATH** é só `3`: os ASes 1, 2 e 4 **não aparecem**.",
       ],
-      note: "Saída real do tcpdump em R1. Em R1, `show ip bgp 172.16.0.0/16` mostra `aggregated by 3 3.3.3.3` e `atomic-aggregate`.",
+      note: "Saída real do tcpdump em R1. A nota confere **os três**: o agregado, o Atomic/Aggregator e a retirada de `172.16.4.0/24`.",
     },
     {
-      title: "O preço da agregação",
+      title: "O que R1 vê: antes e depois do summary-only",
+      table: {
+        head: ["Prefixo em R1", "Sem summary-only", "Com summary-only"],
+        rows: [
+          ["`172.16.1.0/24` (a própria de R1)", "✅", "✅"],
+          ["`172.16.2.0/24` (R2, direto)", "✅", "✅ — R2 anuncia direto"],
+          ["`172.16.3.0/24` (R3)", "✅", "❌ **some**"],
+          ["`172.16.4.0/24` (R4)", "✅", "❌ **some**"],
+          ["`172.16.0.0/16` (agregado de R3)", "✅", "✅ **a única de R3**"],
+        ],
+      },
       points: [
-        "O vizinho **não sabe** mais por onde a rota realmente passa: o AS-PATH `3` esconde os ASes 1, 2 e 4. A **prevenção de laços** pelo AS-PATH **fica mais fraca**.",
-        "A **granularidade** some: R1 não consegue mais **escolher caminhos diferentes** para `172.16.3.0/24` e `172.16.4.0/24`. Os dois seguem a `/16`.",
-        "Existe uma opção `as-set` que **preserva** os ASes de origem no agregado — no FRR 10.5 ela vem **bloqueada por padrão** (`bgp reject-as-sets`), então não é usada aqui.",
-        "O tráfego **continua chegando**: R3 mantém as rotas **específicas** na sua tabela e entrega por elas (o `/24` mais específico vence o `/16`).",
+        "⚖️ **O preço:** R1 não escolhe mais caminhos diferentes para `.3` e `.4` — os dois seguem a `/16`; e o AS-PATH `3` **esconde** os ASes 1, 2 e 4.",
+        "✅ **O tráfego continua chegando:** R3 mantém as **específicas** na tabela e entrega por elas (o `/24` mais específico vence o `/16`).",
       ],
+      note: "A opção `as-set` preservaria os ASes de origem, mas no FRR 10.5 vem **bloqueada** (`bgp reject-as-sets`): não é usada aqui.",
     },
     {
-      title: "Roteiro do Lab 5",
+      title: "Quem faz o quê? (resumo)",
+      table: {
+        head: ["Ferramenta", "Onde age", "Quem fica sabendo", "Papel no Lab 5"],
+        rows: [
+          ["**AS-PATH prepend**", "No **anúncio** de saída (R3)", "O vizinho (R1)", "Faz R1 **trocar** para R2"],
+          ["**as-path ignore**", "Na **decisão local** (R1)", "**Ninguém**", "**Anula** o prepend; sobra o Router ID"],
+          ["**aggregate-address**", "Gera o `/16` em R3", "Todos os vizinhos", "**Resume** os `/24`"],
+          ["**summary-only**", "Suprime as específicas em R3", "Todos os vizinhos", "R1 **perde** `.3` e `.4`"],
+        ],
+      },
+      note: "Prepend muda o que o **vizinho** escolhe; `as-path ignore` muda o que **eu** escolho.",
+    },
+    {
+      title: "O que a nota confere",
       points: [
-        "**Passo 1:** ver os **dois caminhos** de R1 e por que R3 vence (AS-PATH mais curto).",
-        "**Passo 2:** **prepend** em R3 só para `172.16.4.0/24`: **R1 troca para R2**. Com **captura** do UPDATE.",
-        "**Passo 3:** **`as-path ignore`** em R1: o prepend é **anulado** e R1 **volta a R3** — por Router ID.",
-        "**Passo 4:** **agregado** em R3, primeiro **sem** e depois **com** `summary-only`. O que **some** em R1?",
-        "**Desafio:** perguntas de fechamento.",
-        "Nos passos 1, 2, 3 e 4 há uma **previsão** antes de rodar.",
+        "✅ **Na configuração:** o **prepend** (limitado a `172.16.4.0/24`, outbound para R1) em R3, o `as-path ignore` em R1 e o `aggregate-address … summary-only` em R3.",
+        "✅ **No resultado:** R1 aprende o agregado (`aggregated by 3`, `atomic-aggregate`), **não vê** `.3` e `.4`, e R3 marca as `/24` com `s`.",
+        "✅ **Na captura de R1:** o UPDATE de R3 com **o seu prepend**, o UPDATE do **agregado** (Atomic Aggregate + Aggregator) e a **retirada** de `172.16.4.0/24`.",
+        "⚠️ Por isso a captura de R1 fica **rodando do Passo 1 ao 4** (se parar sozinha após 10 min, reinicie: o que já foi capturado continua valendo).",
       ],
-      note: "A nota confere nas SUAS capturas o UPDATE com o seu prepend, o UPDATE do agregado (Atomic Aggregate + Aggregator) e a retirada de `172.16.4.0/24`. Deixe a captura de R1 rodando do passo 1 ao 4.",
     },
     {
       title: "Ao final: explique ao professor",
       points: [
         "Seu professor pode pedir que você **explique o que fez e por quê**. Use a aba **🙋 Explicar** para chamá-lo.",
-        "Você deve conseguir: explicar **por que o prepend trocou o caminho de R1**; **por que o `as-path ignore` o anulou** e o que decidiu **depois**; mostrar o **agregado e o Withdrawn** na captura; e explicar **o que sumiu de R1** com o `summary-only` e **como o tráfego continua**.",
+        "Você deve conseguir: mostrar na captura o **prepend**; explicar por que o **`as-path ignore`** devolveu R1 a R3 e **quem desempatou**; e explicar o que o **`summary-only`** escondeu — e para quem.",
         "Dica: não decore — rode os comandos e **aponte na saída** onde está cada coisa.",
       ],
     },
